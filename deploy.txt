@@ -8,7 +8,7 @@ firebase deploy
 
 ./start_sagbi.sh
 
-git reset --hard 11d118f
+git reset --hard xxxxxx
 git clean -fdx
 git add . && \
 git commit -m "feat: change $(date +'%Y-%m-%d %H:%M:%S')" && \
@@ -24,4 +24,8 @@ sagbi/firebaserc
 
 sagbi/firebase.json
 
-firebase deploy --only hosting --project sagbuntu
+firebase deploy --only hosting --project xxxxxx
+
+
+git config user.email "xxxxxx@gmail.com"
+git config user.name "xxxxxx5079"

@@ -557,15 +557,15 @@
       const urlParams = new URLSearchParams(window.location.search);
       let SIGNALING_URL = urlParams.get('s');
 
-      // 1. Cloudflare Worker から最新のURLを取得 (最速反映)
+      // Cloudflare Worker から最新のトンネルURLを取得
       if (!SIGNALING_URL) {
         try {
-          const workerResponse = await fetch('https://sagbi.biohack5079.workers.dev/');
-          const workerUrl = await response.text();
-          if (workerUrl && workerUrl.includes('trycloudflare.com')) {
-            // https://... を wss://.../ws/chat に変換
-            SIGNALING_URL = workerUrl.replace('https://', 'wss://').trim() + '/ws/chat';
-            terminalLog("URL loaded from Cloudflare Worker: " + SIGNALING_URL);
+          // 常にあなたのWorkerを見に行く
+          const workerUrl = "https://sagbi.biohack5079.workers.dev";
+          const tunnelUrl = await fetch(workerUrl).then(r => r.text());
+          if (tunnelUrl && tunnelUrl.includes('trycloudflare.com')) {
+            // トンネルURL（https://...）をWebSocket用（wss://.../ws/chat）に変換
+            SIGNALING_URL = tunnelUrl.replace("https://", "wss://") + "/ws/chat";
           }
         } catch (e) { console.log("Worker fetch skipped or failed."); }
       }

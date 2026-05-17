@@ -96,15 +96,16 @@ if [ -z "$CLOUDFLARE_URL" ]; then
     exit 1
 fi
 
-# Inject latest tunnel URL into Cloudflare Workers
-if command -v wrangler > /dev/null; then
-    echo "Injecting latest tunnel URL into Cloudflare Workers..."
-    echo "$CLOUDFLARE_URL" | wrangler secret put TUNNEL_URL --name sagbi
-else
-    echo "[Warning] wrangler command not found. Skipping Worker secret update."
-fi
+echo "[3/3] Updating Cloudflare Worker Environment..."
 
-echo -e "\n[3/3] Tunnel Ready: $CLOUDFLARE_URL"
+# 🚨 【超重要】Wranglerを使ってWorkerの環境変数を上書き更新する！
+# これにより、Workerの中身がリアルタイムに書き換わります。
+wrangler secret put TUNNEL_URL --secret-text "$CLOUDFLARE_URL" --name sagbi
+
+echo "Worker environment variable updated successfully!"
+echo "(Skipped firebase deploy. Firebase is safe now!)"
+
+echo -e "\nTunnel Ready: $CLOUDFLARE_URL"
 echo "Opening Global SAGBI URL..."
 
 # 3. Open Browser

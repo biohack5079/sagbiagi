@@ -561,11 +561,12 @@
       if (!SIGNALING_URL) {
         try {
           // 常にあなたのWorkerを見に行く
-          const workerUrl = "https://sagbi.biohack5079.workers.dev";
-          const tunnelUrl = await fetch(workerUrl).then(r => r.text());
+          const workerUrl = "https://sagbi.biohack5079.workers.dev/";
+          // キャッシュを避けるためにタイムスタンプを付与
+          const tunnelUrl = await fetch(workerUrl + "?t=" + Date.now()).then(r => r.text());
           if (tunnelUrl && tunnelUrl.includes('trycloudflare.com')) {
             // トンネルURL（https://...）をWebSocket用（wss://.../ws/chat）に変換
-            SIGNALING_URL = tunnelUrl.replace("https://", "wss://") + "/ws/chat";
+            SIGNALING_URL = tunnelUrl.trim().replace("https://", "wss://") + "/ws/chat";
           }
         } catch (e) { console.log("Worker fetch skipped or failed."); }
       }

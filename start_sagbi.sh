@@ -96,20 +96,13 @@ if [ -z "$CLOUDFLARE_URL" ]; then
     exit 1
 fi
 
-# Convert https to wss for signaling
-SIGNAL_WSS_URL="${CLOUDFLARE_URL/https/wss}/ws/chat"
-
-echo "[3/3] Updating Global Config..."
-# config.json を作成して Firebase 上の全ユーザーが参照できるようにする
-cat <<EOF > public/html/config.json
-{
-  "signaling_url": "$SIGNAL_WSS_URL",
-  "updated_at": "$(date)"
-}
-EOF
-
-echo "Deploying updated config to Firebase..."
-firebase deploy --only hosting
+# Inject latest tunnel URL into Cloudflare Workers
+if command -v wrangler > /dev/null; then
+    echo "Injecting latest tunnel URL into Cloudflare Workers..."
+    echo "$CLOUDFLARE_URL" | wrangler secret put TUNNEL_URL --name sagbi
+else
+    echo "[Warning] wrangler command not found. Skipping Worker secret update."
+fi
 
 echo -e "\n[3/3] Tunnel Ready: $CLOUDFLARE_URL"
 echo "Opening Global SAGBI URL..."

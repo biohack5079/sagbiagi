@@ -555,19 +555,19 @@
 
     async function connectWS() {
       const urlParams = new URLSearchParams(window.location.search);
-      
       let SIGNALING_URL = urlParams.get('s');
 
-      // URLパラメータがない場合、config.jsonから取得を試みる
+      // 1. Cloudflare Worker から最新のURLを取得 (最速反映)
       if (!SIGNALING_URL) {
         try {
-          const response = await fetch('config.json?t=' + Date.now()); // キャッシュ回避
-          const config = await response.json();
-          SIGNALING_URL = config.signaling_url;
-          terminalLog("Global config loaded: " + SIGNALING_URL);
-        } catch (e) {
-          console.log("Config file not found or invalid.");
-        }
+          const workerResponse = await fetch('https://sagbi.biohack5079.workers.dev/');
+          const workerUrl = await response.text();
+          if (workerUrl && workerUrl.includes('trycloudflare.com')) {
+            // https://... を wss://.../ws/chat に変換
+            SIGNALING_URL = workerUrl.replace('https://', 'wss://').trim() + '/ws/chat';
+            terminalLog("URL loaded from Cloudflare Worker: " + SIGNALING_URL);
+          }
+        } catch (e) { console.log("Worker fetch skipped or failed."); }
       }
 
       if (!SIGNALING_URL) {

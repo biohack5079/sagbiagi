@@ -109,9 +109,9 @@ fi
 
 echo "[3/3] Updating Cloudflare Worker Environment..."
 
-# 🚨 【超重要】Wranglerを使ってWorkerの環境変数を上書き更新する！
-# これにより、Workerの中身がリアルタイムに書き換わります。
-if wrangler secret put TUNNEL_URL --secret-text "$CLOUDFLARE_URL" --name sagbi; then
+# 🚨 【修正ポイント】
+# `--secret-text` フラグを廃止し、echo の出力をパイプで流し込んでシークレットを登録します。
+if echo "$CLOUDFLARE_URL" | wrangler secret put TUNNEL_URL --name sagbi; then
     echo "Worker environment variable updated successfully!"
     echo "Waiting for Cloudflare propagation (5s)..."
     sleep 5

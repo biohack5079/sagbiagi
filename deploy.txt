@@ -1,0 +1,27 @@
+git add . && \
+git commit -m "feat: change $(date +'%Y-%m-%d %H:%M:%S')" && \
+git push -u origin main || echo "Git push failed"
+
+
+firebase deploy
+
+
+./start_sagbi.sh
+
+git reset --hard 11d118f
+git clean -fdx
+git add . && \
+git commit -m "feat: change $(date +'%Y-%m-%d %H:%M:%S')" && \
+git push origin main --force
+
+
+
+x86_64-w64-mingw32-g++ -o /home/me/Documents/d/sagbi/installer/sagbi_install.exe /home/me/Documents/d/sagbi/installer/sagbi_installer.cpp \
+    -lshell32 -lurlmon -luser32 -lole32 -mwindows -static
+
+
+sagbi/firebaserc
+
+sagbi/firebase.json
+
+firebase deploy --only hosting --project sagbuntu

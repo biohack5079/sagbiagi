@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ローカル情報を掘り起こすAIショベル「プラウアー」。</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: sans-serif;
+        }
+        .smooth-gradient {
+            font-size: min(3rem, 3.5vw);
+            font-weight: bold;
+            text-decoration: none;
+            background: linear-gradient(to right, #4285F4, #EA4335, #FBBC05, #34A853);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <a href="./plower/" class="smooth-gradient">ローカル情報を掘り起こすAIショベル「プラウアー」。</a>
+    <script>
+        if (!navigator.language.startsWith('ja')) {
+            const enText = 'AI Shovel "Plower" digging up local information.';
+            document.title = enText;
+            document.querySelector('.smooth-gradient').textContent = enText;
+            document.documentElement.lang = 'en';
+        }
+    </script>
+</body>
+</html>

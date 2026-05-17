@@ -1,0 +1,22 @@
+【SAGBI AGI プロジェクト概要】
+SAGBI (Secure And General Believable Intelligence / Spirit AGent Bomb Infrastructure) AGI は、ユーザーの余剰計算リソースを統合し、安全で汎用的な「人間らしい」知能を構築する分散型AGIプラットフォームです。
+主な機能：
+- 3Dアバターによるインタラクティブなチャット
+- マルチモーダル（画像認識）対応
+- ローカルRAGによるプライベートな知識の活用
+- 分散コンピューティングによる推論の高速化
+
+【開発者へのメッセージ】
+このテキストが読み込まれていれば、RAG機能は正常に動作しています。AIに「SAGBI AGIの特徴は何ですか？」と聞いてみてください。
+
+---
+
+【Usage / 使い方】
+1. 起動 / Start:
+   ./start_sagbi.sh を実行。
+2. 共有 / Sharing:
+   QRコードをスキャンしてスマホで参加。外出先から自宅PCのAIを操作可能。
+3. 同期 / Sync:
+   「Spirit Bomb Computing」により、誰かの質問とAIの回答は、接続中の全スマホ・PCでリアルタイムに共有・同期されます。
+4. 注意 / Privacy:
+   RAGフォルダ内はAIが読み取ります。個人情報は入れないでください。

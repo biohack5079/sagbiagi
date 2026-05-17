@@ -1,0 +1,5 @@
+# 統計から特定のディレクトリを除外する設定
+refer/** linguist-documentation
+installer/*.exe linguist-generated
+public/html/*.glb linguist-generated
+public/html/g1m/** linguist-vendored

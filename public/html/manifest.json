@@ -1,0 +1,16 @@
+{
+  "name": "SAGBI DANCE FLOOR",
+  "short_name": "SAGBI DF",
+  "description": "Distributed AGI Storytelling & Knowledge Ocean",
+  "start_url": "/?app=1",
+  "display": "standalone",
+  "background_color": "#12121e",
+  "theme_color": "#ff8eb4",
+  "icons": [
+    {
+      "src": "https://sagbuntu.web.app/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}

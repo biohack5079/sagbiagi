@@ -193,7 +193,7 @@ spec:
     spec:
       containers:
       - name: ollama
-        image: ghcr.io/jmorganca/ollama:0.3.9
+        image: ollama/ollama:latest
         ports:
         - containerPort: 11434
         resources:
@@ -328,6 +328,22 @@ ws.onmessage = e => console.log('msg', e.data);
 curl -X POST http://localhost:11434/api/generate -d '{"model":"gemma3:4b-it-q4_K_M","prompt":"Say hello"}'
 ```
 If you see a JSON response with generated text, the stack is functional.
+
+### 4.1 Verification Commands (K8s)
+To ensure everything is running correctly in Kubernetes, use these commands:
+
+1. **Check Pod Status**:
+   `kubectl get pods -n sagbi`
+2. **Check Ollama Version (Must be 0.5.7+ for Gemma 3)**:
+   `kubectl exec -it -n sagbi deployment/ollama -- ollama --version`
+3. **Verify Model is Pulled**:
+   `kubectl exec -it -n sagbi deployment/ollama -- ollama list`
+4. **Test Inference Inside Cluster**:
+   `kubectl exec -it -n sagbi deployment/ollama -- ollama run gemma3:4b-it-q4_K_M "Hello"`
+5. **Check Signaler Logs**:
+   `kubectl logs -n sagbi -l app=signaler`
+6. **Verify Signaling Health**:
+   `kubectl exec -it -n sagbi deployment/signaler -- curl -s http://localhost:8080/healthz`
 
 ---
 ### 5️⃣ Distribution

@@ -70,6 +70,17 @@ while ! curl -s http://localhost:$CHECK_PORT/healthz > /dev/null; do
 done
 cd ..
 
+# --- Kubernetes Port-Forward (Optional: If using K8s) ---
+if command -v kubectl > /dev/null; then
+    echo "Ensuring K8s Port-forward to Signaler..."
+    # バックグラウンドで8080ポートをK8sのsignalerサービスに繋ぐ
+    kubectl port-forward -n sagbi svc/sagbi-service 8080:80 > /dev/null 2>&1 &
+    sleep 2
+else
+    echo "[Info] kubectl not found. Running in Local Mode."
+fi
+# -------------------------------------------------------
+
 # 2. Start Cloudflare Tunnel and catch the URL
 echo "[2/3] Creating Cloudflare Tunnel..."
 # We use a temporary log file to catch the assigned URL
@@ -96,13 +107,28 @@ if [ -z "$CLOUDFLARE_URL" ]; then
     exit 1
 fi
 
-echo "[3/3] Updating Cloudflare Worker Endpoint..."
+echo "[3/3] Updating Cloudflare Worker Environment..."
 
-# wranglerを使って、Workerの環境変数「TUNNEL_URL」を最新のURLに上書きする
-wrangler secret put TUNNEL_URL --secret-text "$CLOUDFLARE_URL" --name sagbi
+# 🚨 【超重要】Wranglerを使ってWorkerの環境変数を上書き更新する！
+# これにより、Workerの中身がリアルタイムに書き換わります。
+if wrangler secret put TUNNEL_URL --secret-text "$CLOUDFLARE_URL" --name sagbi; then
+    echo "Worker environment variable updated successfully!"
+    echo "Waiting for Cloudflare propagation (5s)..."
+    sleep 5
 
-echo "Worker endpoint updated successfully!"
-echo "(Skipped firebase deploy. Your Firebase config is perfectly safe!)"
+    # 疎通確認: Worker経由でGoサーバーのヘルスチェックを叩く
+    CHECK_URL="https://sagbi.biohack5079.workers.dev/healthz?t=$(date +%s)"
+    if curl -s --max-time 5 "$CHECK_URL" | grep -qi "ok"; then
+        echo "✅ Connection Verified: Worker -> Tunnel -> Go Server (Success!)"
+    else
+        echo "⚠️  Worker update finished, but end-to-end Health Check failed at $CHECK_URL"
+        echo "   Check signaling.log and your Cloudflare Worker logs."
+    fi
+else
+    echo "❌ Failed to update Cloudflare Worker."
+fi
+
+echo "(Skipped firebase deploy. Firebase is safe!)"
 
 echo -e "\nTunnel Ready: $CLOUDFLARE_URL"
 echo "Opening Global SAGBI URL..."

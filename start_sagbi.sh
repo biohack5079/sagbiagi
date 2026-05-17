@@ -96,14 +96,13 @@ if [ -z "$CLOUDFLARE_URL" ]; then
     exit 1
 fi
 
-echo "[3/3] Updating Cloudflare Worker Environment..."
+echo "[3/3] Updating Cloudflare Worker Endpoint..."
 
-# 🚨 【超重要】Wranglerを使ってWorkerの環境変数を上書き更新する！
-# これにより、Workerの中身がリアルタイムに書き換わります。
-echo "$CLOUDFLARE_URL" | wrangler secret put TUNNEL_URL --name sagbi
+# wranglerを使って、Workerの環境変数「TUNNEL_URL」を最新のURLに上書きする
+wrangler secret put TUNNEL_URL --secret-text "$CLOUDFLARE_URL" --name sagbi
 
-echo "Worker environment variable updated successfully!"
-echo "(Skipped firebase deploy. Firebase is safe now!)"
+echo "Worker endpoint updated successfully!"
+echo "(Skipped firebase deploy. Your Firebase config is perfectly safe!)"
 
 echo -e "\nTunnel Ready: $CLOUDFLARE_URL"
 echo "Opening Global SAGBI URL..."

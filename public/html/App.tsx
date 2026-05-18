@@ -33,6 +33,7 @@ const App: React.FC = () => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   // [wave] 等のタグを解析してジェスチャーを発動
   const parseGestures = useCallback((text: string, msgId: string) => {
@@ -71,6 +72,26 @@ const App: React.FC = () => {
     (window as any).toggleSagbiChat = () => setIsOpen(prev => !prev);
   }, []);
 
+  // クリップボードからの貼り付け（スクリーンショット等）の処理
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.indexOf('image') !== -1) {
+          const file = item.getAsFile();
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => setPreviewImage(ev.target?.result as string);
+            reader.readAsDataURL(file);
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
+
   // カメラの切り替え（背面カメラ優先）
   const toggleCamera = useCallback(async () => {
     if (isCamActive) {
@@ -99,9 +120,19 @@ const App: React.FC = () => {
   // フレーム全体でのマウスドラッグ移動
   const handleMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    // 入力欄やボタン、3D操作エリア（Canvas）をクリックした時はドラッグしない
-    if (target.closest('button') || target.closest('input') || target.closest('textarea') || target.closest('.media-controls') || target.tagName === 'CANVAS') {
+
+    // 1. インタラクティブな要素は除外
+    if (target.closest('button') || target.closest('input') || target.closest('textarea') || 
+        target.closest('.media-controls') || target.tagName === 'CANVAS' || target.closest('.bubble')) {
       return;
+    }
+
+    // 2. 右下の端（リサイズハンドル付近）をクリックした時はドラッグしない
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) {
+      const isNearEdgeX = e.clientX > rect.right - 30;
+      const isNearEdgeY = e.clientY > rect.bottom - 30;
+      if (isNearEdgeX && isNearEdgeY) return;
     }
     
     const container = containerRef.current;
@@ -132,6 +163,33 @@ const App: React.FC = () => {
     document.addEventListener('mouseup', onMouseUp);
   };
 
+  // マイク制御 (SpeechRecognition)
+  const toggleMic = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("このブラウザは音声認識をサポートしていません。");
+      return;
+    }
+
+    if (isMicActive) {
+      recognitionRef.current?.stop();
+      setIsMicActive(false);
+    } else {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'ja-JP';
+      recognition.continuous = false;
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        const input = document.getElementById('chat-input') as HTMLTextAreaElement;
+        if (input) input.value += transcript;
+      };
+      recognition.onend = () => setIsMicActive(false);
+      recognition.start();
+      recognitionRef.current = recognition;
+      setIsMicActive(true);
+    }
+  }, [isMicActive]);
+
   useEffect(() => {
     const url = getSignalingUrl();
     const socket = new WebSocket(url);
@@ -146,13 +204,17 @@ const App: React.FC = () => {
 
         setMessages((prev) => {
           const existingIndex = prev.findIndex((m) => m.id === msgId);
-          const text = parseGestures(rawText, msgId);
+          
+          // ストリーミング中、空のテキストで上書きされないようにする
+          const text = rawText ? parseGestures(rawText, msgId) : undefined;
+
           if (existingIndex !== -1) {
             const updated = [...prev];
-            updated[existingIndex] = { ...updated[existingIndex], text, done: payload.done };
+            if (text !== undefined) updated[existingIndex].text = text;
+            updated[existingIndex].done = payload.done;
             return updated;
           }
-          return [...prev, { id: msgId, text, isUser: !isAi, senderName: from || (isAi ? 'sagbi' : 'You'), done: payload.done }];
+          return [...prev, { id: msgId, text: text || '...', isUser: !isAi, senderName: from || (isAi ? 'sagbi' : 'You'), done: payload.done }];
         });
 
         if (isAi) {
@@ -258,9 +320,7 @@ const App: React.FC = () => {
           )}
           <div className="media-controls">
             <button className={`media-btn ${isCamActive ? 'active' : ''}`} onClick={toggleCamera} title="Camera">📷</button>
-            <button 
-              className={`media-btn ${isMicActive ? 'active' : ''}`} 
-              onClick={() => setIsMicActive(!isMicActive)} title="Microphone">🎤</button>
+            <button className={`media-btn ${isMicActive ? 'active' : ''}`} onClick={toggleMic} title="Microphone">🎤</button>
             <button className="media-btn" onClick={() => document.getElementById('file-upload')?.click()} title="Attach Image">📎</button>
             <input type="file" id="file-upload" style={{display: 'none'}} accept="image/*" onChange={(e) => {
               const file = e.target.files?.[0];

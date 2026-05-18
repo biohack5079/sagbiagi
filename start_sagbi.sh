@@ -135,6 +135,13 @@ echo "Opening Global SAGBI URL..."
 
 # 3. Open Browser
 FINAL_URL="https://sagbiagi.web.app/"
+
+# Local Preview check
+if curl -s --max-time 1 http://localhost:4173 > /dev/null; then
+    echo "[Info] Local preview server detected. Using localhost:4173"
+    FINAL_URL="http://localhost:4173/"
+fi
+
 echo "Target URL: $FINAL_URL"
 
 if command -v xdg-open > /dev/null; then

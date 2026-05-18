@@ -31,6 +31,8 @@ const App: React.FC = () => {
   const socketRef = useRef<WebSocket | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
 
   // [wave] 等のタグを解析してジェスチャーを発動
   const parseGestures = useCallback((text: string, msgId: string) => {
@@ -68,6 +70,26 @@ const App: React.FC = () => {
   useEffect(() => {
     (window as any).toggleSagbiChat = () => setIsOpen(prev => !prev);
   }, []);
+
+  // カメラの切り替え（背面カメラ優先）
+  const toggleCamera = async () => {
+    if (isCamActive) {
+      stream?.getTracks().forEach(track => track.stop());
+      setStream(null);
+      setIsCamActive(false);
+    } else {
+      try {
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        });
+        setStream(newStream);
+        if (videoRef.current) videoRef.current.srcObject = newStream;
+        setIsCamActive(true);
+      } catch (err) {
+        console.error("Camera access failed:", err);
+      }
+    }
+  };
 
   // ヘッダーダブルクリックでの最大化切り替え
   const handleDoubleClick = () => {
@@ -146,7 +168,15 @@ const App: React.FC = () => {
 
   const sendMessage = (text: string) => {
     if ((!text.trim() && !previewImage) || !socketRef.current) return;
-    socketRef.current.send(JSON.stringify({ type: 'chat_message', payload: { text: text.trim() } }));
+    
+    // カメラがONの場合は静止画をキャプチャして送るロジックを入れることも可能
+    socketRef.current.send(JSON.stringify({ 
+      type: 'chat_message', 
+      payload: { 
+        text: text.trim(),
+        image: previewImage?.split(',')[1]
+      } 
+    }));
   };
 
   return (
@@ -197,10 +227,13 @@ const App: React.FC = () => {
               <button className="remove-btn" onClick={() => setPreviewImage(null)}>×</button>
             </div>
           )}
+          {isCamActive && (
+            <div className="camera-preview-container">
+              <video ref={videoRef} autoPlay playsInline muted />
+            </div>
+          )}
           <div className="media-controls">
-            <button 
-              className={`media-btn ${isCamActive ? 'active' : ''}`} 
-              onClick={() => setIsCamActive(!isCamActive)} title="Camera">📷</button>
+            <button className={`media-btn ${isCamActive ? 'active' : ''}`} onClick={toggleCamera} title="Camera">📷</button>
             <button 
               className={`media-btn ${isMicActive ? 'active' : ''}`} 
               onClick={() => setIsMicActive(!isMicActive)} title="Microphone">🎤</button>

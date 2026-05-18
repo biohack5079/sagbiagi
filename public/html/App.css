@@ -1,3 +1,6 @@
+* {
+  box-sizing: border-box;
+}
 .app-container {
   position: fixed;
   bottom: 20px;
@@ -94,6 +97,8 @@
 .media-btn.active { background: #ff8eb4; }
 .image-preview-container { position: relative; margin-bottom: 10px; }
 .image-preview-container img { max-height: 80px; border-radius: 8px; }
+.camera-preview-container { margin-bottom: 10px; border-radius: 8px; overflow: hidden; border: 1px solid #555; }
+.camera-preview-container video { width: 100%; display: block; transform: scaleX(-1); } /* 自撮り風にするなら反転、背面なら不要 */
 .remove-btn { position: absolute; top: -5px; right: -5px; background: red; color: white; border: none; border-radius: 50%; cursor: pointer; }
 
 .message.user { justify-content: flex-end; }

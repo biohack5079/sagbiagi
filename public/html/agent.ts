@@ -1,5 +1,5 @@
 export type GestureKey = 
-  | 'wave' | 'nod' | 'joy' | 'jump' | 'dance' | 'shake_head' 
+  | 'wave' | 'nod' | 'joy' | 'jump' | 'dance' | 'walk' | 'shake_head' 
   | 'bow' | 'shrug' | 'surprised' | 'shy' | 'thinking' | 'tilt_head'
   | 'leftHandUp' | 'rightHandUp' | 'raise_hand' | 'leftHandDown' 
   | 'rightHandDown' | 'lower_hand' | 'reset';
@@ -19,6 +19,7 @@ export const GESTURES: Record<string, any> = {
   joy: { action: 'jump' },
   jump: { action: 'jump' },
   dance: { action: 'dance' },
+  walk: { action: 'walk' },
   shake_head: { action: 'shake_head' },
   bow: { bone: 'Head', rot: [0.6, 0, 0] },
   shrug: { action: 'shrug' },

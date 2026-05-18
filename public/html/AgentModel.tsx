@@ -52,13 +52,14 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
       const isSideMatch = (target.includes('left') && (boneName.includes('left') || boneName.includes('_l'))) ||
                           (target.includes('right') && (boneName.includes('right') || boneName.includes('_r')));
       
-      if (!isSideMatch && !target.includes('head') && !target.includes('ear')) continue;
+      if (!isSideMatch && !target.includes('head') && !target.includes('ear') && !target.includes('leg')) continue;
 
       // 部位の判定
       const isPartMatch = 
         (target.includes('lower') && (boneName.includes('lower') || boneName.includes('fore'))) ||
         (target.includes('upper') && (boneName.includes('upper') || (boneName.includes('arm') && !boneName.includes('lower')))) ||
-        (target.includes('ear') && boneName.includes('ear'));
+        (target.includes('ear') && boneName.includes('ear')) ||
+        (target.includes('leg') && boneName.includes('leg'));
 
       if (isSideMatch && isPartMatch) {
         found = node;
@@ -117,21 +118,20 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
     const ll = findBone('LeftLowerArm');
     const rr = findBone('RightLowerArm');
     
-    // refer/g1m/main.js の初期ポーズ（手を斜め下に下ろしたリラックスした状態）を再現。
-    // VRoidモデルではUpperArmのZ軸回転で腕の上下、LowerArmのX軸回転で肘の曲げを制御することが多い。
-    // 左右で回転方向が逆になる点に注意。
-    // この設定は、モデルのデフォルト姿勢が腕を広げている場合に、自然な立ち姿にするためのものです。
-    if (l) l.rotation.set(0, 0, 1.3); 
-    if (r) r.rotation.set(0, 0, -1.3);
+    // 腕が「うんと上がった状態」を修正。
+    // VRMモデルのデフォルトポーズを活かすため、一旦 0（または極微小値）にリセットします。
+    // もしこれでも高い場合は、ここを 1.2 と -1.2 にすると腕が体側に下がります。
+    if (l) l.rotation.set(0, 0, 0.1); 
+    if (r) r.rotation.set(0, 0, -0.1);
     // VRoidの肘(LowerArm)は主にX軸で曲がります
     if (ll) ll.rotation.set(-0.3, 0, 0); 
     if (rr) rr.rotation.set(-0.3, 0, 0);
     
     const settleTimer = setTimeout(() => {
       hairBones.forEach(({ bone, original }) => {
-        bone.rotation.copy(original);
+        bone.rotation.copy(original); // 髪の毛の初期回転を復元
       });
-    }, 800);
+    }, 800); // 髪の毛が落ち着くまでの時間
 
     const earTimer = setTimeout(() => {
       const earL = findBone('LeftEar') || findBone('Ear_L');
@@ -140,8 +140,8 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
         earL.rotation.z = 0.6; // 少し強めに動かす
         earR.rotation.z = -0.6;
         setTimeout(() => {
-          earL.rotation.z = 0;
-          earR.rotation.z = 0;
+          earL.rotation.z = -0.7; 
+          earR.rotation.z = 0.7;
         }, 400);
       }
     }, 1500);
@@ -162,11 +162,16 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
         const r = findBone('RightUpperArm');
         const ll = findBone('LeftLowerArm');
         const rr = findBone('RightLowerArm');
-        const h = findBone('Head');
-        if (l) l.rotation.set(0, 0, 1.3);
-        if (r) r.rotation.set(0, 0, -1.3);
+        const earL = findBone('LeftEar') || findBone('Ear_L'); // 耳のボーンも取得
+        const earR = findBone('RightEar') || findBone('Ear_R'); // 耳のボーンも取得
+
+        // 腕の初期設定
+        if (l) l.rotation.set(5, 5, 0);
+        if (r) r.rotation.set(0, 0, 5);
         if (ll) ll.rotation.set(-0.3, 0, 0);
         if (rr) rr.rotation.set(-0.3, 0, 0);
+        if (earL) earL.rotation.set(0, 0, -0.7);
+        if (earR) earR.rotation.set(0, 0, 0.7);
     } else if (g.bone) {
         const bone = findBone(g.bone);
         if (bone) bone.rotation.set(...(g.rot as [number, number, number]));
@@ -197,9 +202,25 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
       // アクションごとの挙動 (chat.jsのanimateAgent相当)
       if (g?.action === 'jump') {
         groupRef.current.position.y += Math.abs(Math.sin(t * 15)) * 0.2;
+        const lul = findBone('LeftUpperLeg');
+        const rul = findBone('RightUpperLeg');
+        if (lul) lul.rotation.x = -Math.abs(Math.sin(t * 15)) * 0.5;
+        if (rul) rul.rotation.x = -Math.abs(Math.sin(t * 15)) * 0.5;
       } else if (g?.action === 'dance') {
         groupRef.current.position.y += Math.abs(Math.sin(t * 15)) * 0.3;
         groupRef.current.rotation.y += Math.sin(t * 10) * 0.8;
+        const lul = findBone('LeftUpperLeg');
+        const rul = findBone('RightUpperLeg');
+        if (lul) lul.rotation.x = Math.sin(t * 10) * 0.5;
+        if (rul) rul.rotation.x = -Math.sin(t * 10) * 0.5;
+      } else if (g?.action === 'walk') {
+        // 歩行アニメーション: 左右の足を交互に振る
+        const lul = findBone('LeftUpperLeg');
+        const rul = findBone('RightUpperLeg');
+        const speed = 10;
+        if (lul) lul.rotation.x = Math.sin(t * speed) * 0.4;
+        if (rul) rul.rotation.x = -Math.sin(t * speed) * 0.4;
+        groupRef.current.position.y += Math.abs(Math.sin(t * speed)) * 0.05;
       } else if (g?.action === 'shake_head') {
         const head = findBone('Head');
         if (head) {

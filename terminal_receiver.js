@@ -15,8 +15,11 @@ ws.on('message', async (data) => {
   try {
     const msg = JSON.parse(data);
     
-    // チャットメッセージ（ユーザーまたはAI）をフィルタリングして表示
-    if ((msg.type === 'chat_message' || msg.type === 'chat_response') && msg.payload?.text) {
+    // ユーザーのメッセージ、またはAIの返答が完了(done)した時だけ表示する
+    const isUser = msg.type === 'chat_message';
+    const isAiDone = msg.type === 'chat_response' && msg.payload?.done;
+
+    if ((isUser || isAiDone) && msg.payload?.text) {
       const isAi = msg.type === 'chat_response';
       const sender = isAi ? (msg.from || 'sagbiちゃん') : 'You';
       const color = isAi ? '\x1b[35m' : '\x1b[32m'; // AIは紫、Userは緑

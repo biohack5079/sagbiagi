@@ -24,7 +24,11 @@ const getSignalingUrl = () => {
 };
 
 const App: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const saved = localStorage.getItem('sagbi_history');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [socketStatus, setSocketStatus] = useState<number>(WebSocket.CLOSED);
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -42,6 +46,11 @@ const App: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
+
+  // 履歴が変わるたびに保存
+  useEffect(() => {
+    localStorage.setItem('sagbi_history', JSON.stringify(messages));
+  }, [messages]);
 
   // [wave] 等のタグを解析してジェスチャーを発動
   const parseGestures = useCallback((text: string, msgId: string) => {
@@ -285,16 +294,16 @@ const App: React.FC = () => {
     socketRef.current?.send(JSON.stringify({ type: 'signal', payload: { sdp: pc.localDescription } }));
   }, [socketRef]);
 
-  useEffect(() => {
+  const connectWebSocket = useCallback(() => {
     const url = getSignalingUrl();
     const socket = new WebSocket(url);
     socketRef.current = socket;
+    setSocketStatus(WebSocket.CONNECTING);
 
     socket.onopen = () => {
       console.log("[WebSocket] Connection established. Registering...");
-      // サーバーにユーザーとして登録。これがないと返信がフィルタリングされる場合があります
       socket.send(JSON.stringify({ type: 'register', payload: { role: 'user' } }));
-      // WebSocketがつながったらWebRTCの準備を開始
+      setSocketStatus(WebSocket.OPEN);
       startWebRTCSession();
     };
 
@@ -333,19 +342,35 @@ const App: React.FC = () => {
     };
 
     socket.onclose = () => {
-      console.warn("[WebSocket] Disconnected. Reconnecting chat...");
-      // 必要であればWebSocket自体の再接続ロジックもここに追加
+      console.warn("[WebSocket] Disconnected. Reconnecting in 5s...");
+      setSocketStatus(WebSocket.CLOSED);
+      // 5秒後に自動再接続
+      setTimeout(connectWebSocket, 5000);
     };
 
-    return () => socket.close();
-  }, [parseGestures, triggerAutoGesture]);
+    socket.onerror = (err) => {
+      console.error("[WebSocket] Error:", err);
+      setSocketStatus(WebSocket.CLOSED);
+    };
+  }, [parseGestures, triggerAutoGesture, startWebRTCSession]);
+
+  useEffect(() => {
+    connectWebSocket();
+    return () => socketRef.current?.close();
+  }, [connectWebSocket]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const sendMessage = (text: string) => {
-    if ((!text.trim() && !previewImage) || !socketRef.current) return;
+    if (!text.trim() && !previewImage) return;
+
+    // 送信時に接続が切れていれば再接続を試みる
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      connectWebSocket();
+      return;
+    }
 
     const tempId = "user-" + crypto.randomUUID();
 
@@ -388,10 +413,13 @@ const App: React.FC = () => {
     >
       <div className="chat-header" onDoubleClick={handleDoubleClick}>
         <div className="chat-status-area">
-          <div className={`chat-status-dot ${socketRef.current?.readyState === 1 ? 'online' : ''}`}></div>
+          <div className={`chat-status-dot ${socketStatus === WebSocket.OPEN ? 'online' : ''}`}></div>
           <span className="chat-title">SAGBI AGI</span>
         </div>
         <div className="chat-controls">
+          <button className="chat-btn" onClick={() => setMessages([])} title="履歴を消去">
+            🗑️
+          </button>
           <button className="chat-btn" onClick={() => setIsCollapsed(!isCollapsed)}>
             {isCollapsed ? '+' : '−'}
           </button>

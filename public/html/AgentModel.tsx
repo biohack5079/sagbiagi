@@ -117,12 +117,15 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
     const r = findBone('RightUpperArm');
     const ll = findBone('LeftLowerArm');
     const rr = findBone('RightLowerArm');
+    const earL = findBone('LeftEar') || findBone('Ear_L');
+    const earR = findBone('RightEar') || findBone('Ear_R');
     
-    // 腕が「うんと上がった状態」を修正。
-    // VRMモデルのデフォルトポーズを活かすため、一旦 0（または極微小値）にリセットします。
-    // もしこれでも高い場合は、ここを 1.2 と -1.2 にすると腕が体側に下がります。
-    if (l) l.rotation.set(0, 0, 0.1); 
-    if (r) r.rotation.set(0, 0, -0.1);
+    // 初期状態片手上げ・片手前
+    if (l) l.rotation.set(5, 5, 0); 
+    if (r) r.rotation.set(0, 0, 5);
+    // 耳の初期状態
+    if (earL) earL.rotation.z = -0.7;
+    if (earR) earR.rotation.z = 0.7;
     // VRoidの肘(LowerArm)は主にX軸で曲がります
     if (ll) ll.rotation.set(-0.3, 0, 0); 
     if (rr) rr.rotation.set(-0.3, 0, 0);

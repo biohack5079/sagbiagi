@@ -36,6 +36,7 @@ const App: React.FC = () => {
   const [isMicActive, setIsMicActive] = useState(false);
   const [isCamActive, setIsCamActive] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [showChatLog, setShowChatLog] = useState(true);
   const [currentGesture, setCurrentGesture] = useState('reset');
   const triggeredActions = useRef<Set<string>>(new Set());
   const socketRef = useRef<WebSocket | null>(null);
@@ -413,6 +414,14 @@ const App: React.FC = () => {
     >
       <div className="chat-header" onDoubleClick={handleDoubleClick}>
         <div className="chat-status-area">
+          <button 
+            className="chat-btn" 
+            onClick={(e) => { e.stopPropagation(); setShowChatLog(!showChatLog); }} 
+            title={showChatLog ? "コメントを非表示" : "コメントを表示"}
+            style={{ fontSize: '18px', marginRight: '4px' }}
+          >
+            {showChatLog ? '👁️' : '🙈'}
+          </button>
           <div className={`chat-status-dot ${socketStatus === WebSocket.OPEN ? 'online' : ''}`}></div>
           <span className="chat-title">SAGBI AGI</span>
         </div>
@@ -441,7 +450,7 @@ const App: React.FC = () => {
       </div>
 
       <div className="chat-overlay">
-        <div className="chat-log">
+        <div className="chat-log" style={{ display: showChatLog ? 'flex' : 'none' }}>
           {messages.map((m) => (
             <div key={m.id} className={`message ${m.isUser ? 'user' : 'ai'}`}>
               <div className="bubble">

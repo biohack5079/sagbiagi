@@ -361,7 +361,8 @@ const App: React.FC = () => {
   }, [connectWebSocket]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // メッセージ更新時に即座に最下部へスクロールさせ、最新の吹き出しが隠れないようにします
+    chatEndRef.current?.scrollIntoView({ behavior: 'auto' });
   }, [messages]);
 
   const sendMessage = (text: string) => {

@@ -11,8 +11,8 @@ const getSignalingUrl = () => {
   let url = urlParams.get('s');
   if (!url) {
     const workerHost = "sagbi.biohack5079.workers.dev";
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    url = `${protocol}//${workerHost}/ws/chat`;
+    // Workerプロキシは wss が必須なため、プロトコルを wss に固定
+    url = `wss://${workerHost}/ws/chat`;
   }
   return url;
 };
@@ -122,16 +122,16 @@ const App: React.FC = () => {
     const target = e.target as HTMLElement;
 
     // 1. インタラクティブな要素は除外
-    if (target.closest('button') || target.closest('input') || target.closest('textarea') || 
-        target.closest('.media-controls') || target.tagName === 'CANVAS' || target.closest('.bubble')) {
+    if (target.closest('button') || target.closest('input') || target.closest('textarea') ||
+      target.closest('.media-controls') || target.tagName === 'CANVAS' || target.closest('.bubble')) {
       return;
     }
 
-    // 2. 右下の端（リサイズハンドル付近）をクリックした時はドラッグしない
     const rect = containerRef.current?.getBoundingClientRect();
     if (rect) {
-      const isNearEdgeX = e.clientX > rect.right - 30;
-      const isNearEdgeY = e.clientY > rect.bottom - 30;
+      // 右下の角（リサイズハンドル付近 50px）をクリックした時はドラッグ移動を無効にする
+      const isNearEdgeX = e.clientX > rect.right - 50;
+      const isNearEdgeY = e.clientY > rect.bottom - 50;
       if (isNearEdgeX && isNearEdgeY) return;
     }
     
@@ -204,17 +204,15 @@ const App: React.FC = () => {
 
         setMessages((prev) => {
           const existingIndex = prev.findIndex((m) => m.id === msgId);
-          
-          // ストリーミング中、空のテキストで上書きされないようにする
-          const text = rawText ? parseGestures(rawText, msgId) : undefined;
+          const text = parseGestures(rawText, msgId);
 
           if (existingIndex !== -1) {
             const updated = [...prev];
-            if (text !== undefined) updated[existingIndex].text = text;
+            updated[existingIndex].text = text; // 累積テキストで更新
             updated[existingIndex].done = payload.done;
             return updated;
           }
-          return [...prev, { id: msgId, text: text || '...', isUser: !isAi, senderName: from || (isAi ? 'sagbi' : 'You'), done: payload.done }];
+          return [...prev, { id: msgId, text: text || '', isUser: !isAi, senderName: from || (isAi ? 'sagbi' : 'You'), image: payload.image, done: payload.done }];
         });
 
         if (isAi) {
@@ -223,6 +221,7 @@ const App: React.FC = () => {
         }
       }
     };
+
     return () => socket.close();
   }, [parseGestures, triggerAutoGesture]);
 
@@ -299,7 +298,11 @@ const App: React.FC = () => {
             <div key={m.id} className={`message ${m.isUser ? 'user' : 'ai'}`}>
               <div className="bubble">
                 <div className="sender">{m.senderName}</div>
-                <div className="text">{m.text}</div>
+                {m.image && <img src={m.image.startsWith('data:') ? m.image : `data:image/jpeg;base64,${m.image}`} alt="attached" className="bubble-img" />}
+                <div className="text">
+                  {m.text}
+                  {!m.done && !m.isUser && <span className="thinking-dots">...</span>}
+                </div>
               </div>
             </div>
           ))}
@@ -320,6 +323,7 @@ const App: React.FC = () => {
           )}
           <div className="media-controls">
             <button className={`media-btn ${isCamActive ? 'active' : ''}`} onClick={toggleCamera} title="Camera">📷</button>
+
             <button className={`media-btn ${isMicActive ? 'active' : ''}`} onClick={toggleMic} title="Microphone">🎤</button>
             <button className="media-btn" onClick={() => document.getElementById('file-upload')?.click()} title="Attach Image">📎</button>
             <input type="file" id="file-upload" style={{display: 'none'}} accept="image/*" onChange={(e) => {

@@ -201,6 +201,12 @@ const App: React.FC = () => {
     const socket = new WebSocket(url);
     socketRef.current = socket;
 
+    socket.onopen = () => {
+      console.log("[WebSocket] Connection established. Registering...");
+      // サーバーにユーザーとして登録。これがないと返信がフィルタリングされる場合があります
+      socket.send(JSON.stringify({ type: 'register', payload: { role: 'user' } }));
+    };
+
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
       console.log("[WebSocket] Received:", data); // デバッグ用ログを追加

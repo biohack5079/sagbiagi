@@ -23,7 +23,7 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
     let result: THREE.Object3D | undefined;
     scene.traverse((n) => {
       const boneName = n.name.toLowerCase();
-      // 頭部ボーンの判定を厳格化（髪の毛などの部分一致を避ける）
+      // 頭部・耳ボーンの判定
       if (target === 'head' && (boneName === 'head' || boneName === 'j_bip_c_head' || boneName === 'neck')) {
         result = n;
       }
@@ -32,6 +32,10 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
                         (target.includes('left') && (boneName.includes('left') || boneName.includes('_l')) && (boneName.includes('arm') || boneName.includes('shoulder'))) ||
                         (target.includes('right') && (boneName.includes('right') || boneName.includes('_r')) && (boneName.includes('arm') || boneName.includes('shoulder')));
         if (isMatch) result = n;
+      }
+      // 耳の検索を個別に追加
+      if (!result && target.includes('ear') && boneName.includes(target)) {
+        result = n;
       }
     });
     if (result) boneCache.set(target, result);
@@ -79,11 +83,27 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
     const ll = findBone('LeftLowerArm');
     const rr = findBone('RightLowerArm');
     const h = findBone('Head');
-    // 腕を下げる方向（負の値が下げ、正の値が上げの場合が多い）
-    if (l) l.rotation.set(0, 0, -1.3); 
-    if (r) r.rotation.set(0, 0, 1.3);
+    
+    // 腕の回転方向を反転（斜め上から下へ）
+    if (l) l.rotation.set(0, 0, 1.3); 
+    if (r) r.rotation.set(0, 0, -1.3);
     if (ll) ll.rotation.set(0, 0, 0.2); // 少し内側に曲げる
     if (rr) rr.rotation.set(0, 0, -0.2);
+    
+    const timer = setTimeout(() => {
+      const earL = findBone('LeftEar') || findBone('Ear_L');
+      const earR = findBone('RightEar') || findBone('Ear_R');
+      if (earL && earR) {
+        earL.rotation.z = 0.4;
+        earR.rotation.z = -0.4;
+        setTimeout(() => {
+          earL.rotation.z = 0;
+          earR.rotation.z = 0;
+        }, 400);
+      }
+    }, 2000);
+
+    return () => clearTimeout(timer);
   }, [scene, findBone]);
 
   // ジェスチャーの状態変化に応じたボーン操作
@@ -97,8 +117,8 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
         const ll = findBone('LeftLowerArm');
         const rr = findBone('RightLowerArm');
         const h = findBone('Head');
-        if (l) l.rotation.set(0, 0, -1.3);
-        if (r) r.rotation.set(0, 0, 1.3);
+        if (l) l.rotation.set(0, 0, 1.3);
+        if (r) r.rotation.set(0, 0, -1.3);
         if (ll) ll.rotation.set(0, 0, 0.2);
         if (rr) rr.rotation.set(0, 0, -0.2);
     } else if (g.bone) {
@@ -144,8 +164,8 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
         const l = findBone('LeftUpperArm');
         const r = findBone('RightUpperArm');
         const h = findBone('Head');
-        if (l) l.rotation.set(0, 0, -0.8);
-        if (r) r.rotation.set(0, 0, 0.8);
+        if (l) l.rotation.set(0, 0, 0.8);
+        if (r) r.rotation.set(0, 0, -0.8);
         if (h) h.rotation.set(0, 0, 0.2);
       } else if (g?.action === 'surprised') {
         groupRef.current.position.z = -0.5;

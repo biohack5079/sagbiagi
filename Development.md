@@ -200,6 +200,11 @@ spec:
           limits:
             cpu: "2"
             memory: "4Gi"
+        lifecycle:
+          postStart:
+            exec:
+              # コンテナ起動時にモデルが存在しない場合は自動的にプルするように仕込む
+              command: ["/bin/sh", "-c", "sleep 5 && ollama pull gemma3:4b-it-q4_K_M"]
         securityContext:
           runAsUser: 1000
           runAsGroup: 1000

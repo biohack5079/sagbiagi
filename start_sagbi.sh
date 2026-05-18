@@ -76,6 +76,15 @@ if command -v kubectl > /dev/null; then
     # バックグラウンドで8080ポートをK8sのsignalerサービスに繋ぐ
     kubectl port-forward -n sagbi svc/sagbi-service 8080:80 > /dev/null 2>&1 &
     sleep 2
+
+    # Kubernetes上のOllamaにモデルが存在するか確認し、なければプルを実行
+    echo "Checking for model $MODEL in Kubernetes Ollama deployment..."
+    if ! kubectl exec -n sagbi deployment/ollama -- ollama list 2>/dev/null | grep -q "$MODEL"; then
+        echo "Model $MODEL not found in K8s. Pulling now (this may take a while)..."
+        kubectl exec -n sagbi deployment/ollama -- ollama pull "$MODEL"
+    else
+        echo "Model $MODEL is already present in Kubernetes."
+    fi
 else
     echo "[Info] kubectl not found. Running in Local Mode."
 fi

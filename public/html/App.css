@@ -18,7 +18,8 @@
   resize: both;
   min-width: 300px;
   min-height: 400px;
-  overflow: hidden; /* リサイズハンドルを表示するために必要 */
+  /* リサイズハンドルを表示しつつ中身を制御 */
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 .app-container.collapsed {
@@ -85,11 +86,12 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 15px;
+  padding: 20px 15px; /* 上部に少し余裕を持たせて欠けを防止 */
+  pointer-events: none; /* 背後の3Dモデルを操作できるようにする */
 }
 .message {
   display: flex;
-  pointer-events: auto;
+  pointer-events: auto; /* 吹き出し部分のみ操作可能にする */
 }
 .media-controls {
   display: flex;
@@ -115,7 +117,7 @@
 .image-preview-container img { max-height: 80px; border-radius: 8px; display: block; }
 .camera-preview-container { margin: 10px; border-radius: 8px; overflow: hidden; border: 1px solid #555; background: #000; }
 .camera-preview-container video { width: 100%; display: block; }
-.remove-btn { position: absolute; top: -8px; right: -8px; background: #f44336; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; z-index: 5; display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; }
+.remove-btn { position: absolute; top: -8px; right: -8px; background: #f44336; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; z-index: 5; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
 
 .message.user { justify-content: flex-end; }
 .bubble {
@@ -139,11 +141,11 @@
 .thinking-dots {
   display: inline-block;
   margin-left: 4px;
-  animation: blink 1s infinite;
+  animation: thinking-blink 1s infinite;
   font-weight: bold;
   color: #ff8eb4;
 }
-@keyframes blink { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+@keyframes thinking-blink { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
 .sender { font-size: 0.8em; opacity: 0.6; }
 .input-area {
   pointer-events: auto;
@@ -153,7 +155,7 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   z-index: 3;
   width: 100%;
-  padding-right: 20px; /* 右下のリサイズハンドルと重ならないようにマージンを確保 */
+  padding-right: 25px; /* リサイズハンドルと重ならないように調整 */
 }
 .input-row-flex {
   display: flex;
@@ -163,7 +165,7 @@
 }
 #chat-input {
   flex: 1;
-  min-width: 0; /* フレックスアイテムのはみ出しを抑制 */
+  min-width: 0; /* フレックス内での崩れを防止 */
   background: #1e1e2f;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -187,4 +189,13 @@
   height: 44px;
   flex-shrink: 0;
 }
-.chat-log::-webkit-scrollbar { width: 0; }
+
+/* スクロールバーのカスタマイズ（はみ出し感を抑える） */
+.chat-log::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-log::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+.chat-log::-webkit-scrollbar-track { background: transparent; }

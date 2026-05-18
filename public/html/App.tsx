@@ -9,12 +9,16 @@ import './App.css';
 const getSignalingUrl = () => {
   const urlParams = new URLSearchParams(window.location.search);
   let url = urlParams.get('s');
-  if (!url) {
+  if (url) return url;
+
+  // localhost で実行中の場合は、ローカルのシグナリングサーバーを優先
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return `ws://localhost:8080/ws/chat`;
+  } else {
     const workerHost = "sagbi.biohack5079.workers.dev";
     // Workerプロキシは wss が必須なため、プロトコルを wss に固定
-    url = `wss://${workerHost}/ws/chat`;
+    return `wss://${workerHost}/ws/chat`;
   }
-  return url;
 };
 
 const App: React.FC = () => {
@@ -129,9 +133,9 @@ const App: React.FC = () => {
 
     const rect = containerRef.current?.getBoundingClientRect();
     if (rect) {
-      // 右下の角（リサイズハンドル付近 50px）をクリックした時はドラッグ移動を無効にする
-      const isNearEdgeX = e.clientX > rect.right - 50;
-      const isNearEdgeY = e.clientY > rect.bottom - 50;
+      // 右下の角（リサイズハンドル付近 30px）をクリックした時はドラッグ移動を無効にする
+      const isNearEdgeX = e.clientX > rect.right - 30;
+      const isNearEdgeY = e.clientY > rect.bottom - 30;
       if (isNearEdgeX && isNearEdgeY) return;
     }
     
@@ -208,7 +212,7 @@ const App: React.FC = () => {
 
           if (existingIndex !== -1) {
             const updated = [...prev];
-            updated[existingIndex].text = text; // 累積テキストで更新
+            updated[existingIndex].text = text;
             updated[existingIndex].done = payload.done;
             return updated;
           }

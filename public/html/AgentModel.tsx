@@ -104,8 +104,8 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
       } else if (g?.action === 'shake_head') {
         const head = findBone('Head');
         if (head) {
-          head.rotation.y = Math.sin(t * 30) * 0.7;
-          head.rotation.x = Math.abs(Math.sin(t * 15)) * 0.3;
+          head.rotation.y = Math.sin(t * 15) * 0.7;
+          head.rotation.x = Math.abs(Math.sin(t * 7.5)) * 0.3;
         }
       } else if (g?.action === 'shrug') {
         const l = findBone('LeftUpperArm');

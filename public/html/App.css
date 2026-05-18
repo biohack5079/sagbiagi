@@ -86,12 +86,12 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 20px 15px; /* 上部に少し余裕を持たせて欠けを防止 */
+  padding: 60px 15px 20px; /* ヘッダーを避けるため上部を大幅に確保 */
   pointer-events: none; /* 背後の3Dモデルを操作できるようにする */
 }
 .message {
   display: flex;
-  pointer-events: auto; /* 吹き出し部分のみ操作可能にする */
+  pointer-events: none; /* 行自体のイベントを無効化 */
 }
 .media-controls {
   display: flex;
@@ -121,6 +121,7 @@
 
 .message.user { justify-content: flex-end; }
 .bubble {
+  pointer-events: auto; /* 吹き出し部分のみクリックやテキスト選択を有効化 */
   max-width: 85%;
   padding: 10px 14px;
   border-radius: 14px;
@@ -153,9 +154,9 @@
   background: #2a2a40;
   border-radius: 0 0 12px 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: 3;
-  width: 100%;
-  padding-right: 25px; /* リサイズハンドルと重ならないように調整 */
+  z-index: 10;
+  width: 100% !important;
+  padding-right: 35px; /* リサイズハンドル用の余白を確実に確保 */
 }
 .input-row-flex {
   display: flex;

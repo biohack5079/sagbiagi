@@ -202,22 +202,27 @@ const App: React.FC = () => {
     socketRef.current = socket;
 
     socket.onmessage = (event) => {
-      const { type, payload, from } = JSON.parse(event.data);
+      const data = JSON.parse(event.data);
+      console.log("[WebSocket] Received:", data); // デバッグ用ログを追加
+      const { type, payload, from } = data;
+
       if (type === 'chat_response' || type === 'chat_message') {
         const isAi = type === 'chat_response';
-        const msgId = payload.id;
-        const rawText = payload.text || '';
+        const msgId = payload.id || (isAi ? 'ai-current' : 'user-current');
+        const rawText = payload.text;
 
         setMessages((prev) => {
           const existingIndex = prev.findIndex((m) => m.id === msgId);
-          const text = parseGestures(rawText, msgId);
+          // chat.jsと同様、累積テキストで上書きする
+          const text = rawText !== undefined ? parseGestures(rawText, msgId) : undefined;
 
           if (existingIndex !== -1) {
             const updated = [...prev];
-            updated[existingIndex] = { ...updated[existingIndex], text, done: !!payload.done };
+            if (text !== undefined) updated[existingIndex].text = text;
+            updated[existingIndex].done = !!payload.done;
             return updated;
           }
-          return [...prev, { id: msgId, text: text, isUser: !isAi, senderName: from || (isAi ? 'sagbi' : 'You'), image: payload.image, done: !!payload.done }];
+          return [...prev, { id: msgId, text: text || (isAi ? '...' : ''), isUser: !isAi, senderName: from || (isAi ? 'sagbiちゃん' : 'You'), image: payload.image, done: !!payload.done }];
         });
 
         if (isAi) {

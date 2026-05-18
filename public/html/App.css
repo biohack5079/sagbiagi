@@ -156,7 +156,8 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   z-index: 10;
   width: 100% !important;
-  padding-right: 35px; /* リサイズハンドル用の余白を確実に確保 */
+  /* リサイズハンドルのつまみ部分(右下)と干渉しないよう右側にパディングを追加 */
+  padding: 12px 40px 12px 12px;
 }
 .input-row-flex {
   display: flex;

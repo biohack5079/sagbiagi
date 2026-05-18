@@ -71,22 +71,27 @@ done
 cd ..
 
 # --- Kubernetes Port-Forward (Optional: If using K8s) ---
-if command -v kubectl > /dev/null; then
-    echo "Ensuring K8s Port-forward to Signaler..."
-    # バックグラウンドで8080ポートをK8sのsignalerサービスに繋ぐ
-    kubectl port-forward -n sagbi svc/sagbi-service 8080:80 > /dev/null 2>&1 &
-    sleep 2
+# 'kubectl' があり、かつ 'sagbi' 名前空間にアクセス可能な場合のみ K8s モードを試行する
+if command -v kubectl > /dev/null && kubectl get ns sagbi > /dev/null 2>&1; then
+    # サービスの存在を確認してからポートフォワードを実行
+    if kubectl get svc sagbi-service -n sagbi > /dev/null 2>&1; then
+        echo "Ensuring K8s Port-forward to Signaler..."
+        kubectl port-forward -n sagbi svc/sagbi-service 8080:80 > /dev/null 2>&1 &
+        sleep 2
+    fi
 
-    # Kubernetes上のOllamaにモデルが存在するか確認し、なければプルを実行
-    echo "Checking for model $MODEL in Kubernetes Ollama deployment..."
-    if ! kubectl exec -n sagbi deployment/ollama -- ollama list 2>/dev/null | grep -q "$MODEL"; then
-        echo "Model $MODEL not found in K8s. Pulling now (this may take a while)..."
-        kubectl exec -n sagbi deployment/ollama -- ollama pull "$MODEL"
-    else
-        echo "Model $MODEL is already present in Kubernetes."
+    # Deployment の存在を確認してからモデルのチェック/プルを実行
+    if kubectl get deployment ollama -n sagbi > /dev/null 2>&1; then
+        echo "Checking for model $MODEL in Kubernetes Ollama deployment..."
+        if ! kubectl exec -n sagbi deployment/ollama -- ollama list 2>/dev/null | grep -q "$MODEL"; then
+            echo "Model $MODEL not found in K8s. Pulling now (this may take a while)..."
+            kubectl exec -n sagbi deployment/ollama -- ollama pull "$MODEL"
+        else
+            echo "Model $MODEL is already present in Kubernetes."
+        fi
     fi
 else
-    echo "[Info] kubectl not found. Running in Local Mode."
+    echo "[Info] Kubernetes 'sagbi' namespace not found or cluster unreachable. Running in Local Mode."
 fi
 # -------------------------------------------------------
 
@@ -128,7 +133,7 @@ if echo "$CLOUDFLARE_URL" | wrangler secret put TUNNEL_URL --name sagbi; then
     # 疎通確認: Worker経由でGoサーバーのヘルスチェックを叩く
     CHECK_URL="https://sagbi.biohack5079.workers.dev/healthz?t=$(date +%s)"
     if curl -s --max-time 5 "$CHECK_URL" | grep -qi "ok"; then
-        echo "✅ Connection Verified: Worker -> Tunnel -> Go Server (Success!)"
+        echo "✅ Online: Your Local AI is now accessible from the Web via Cloudflare."
     else
         echo "⚠️  Worker update finished, but end-to-end Health Check failed at $CHECK_URL"
         echo "   Check signaling.log and your Cloudflare Worker logs."
@@ -140,34 +145,21 @@ fi
 echo "(Skipped firebase deploy. Firebase is safe!)"
 
 echo -e "\nTunnel Ready: $CLOUDFLARE_URL"
-echo "Opening Global SAGBI URL..."
 
 # 3. Open Browser
-FINAL_URL="https://sagbiagi.web.app/"
+PRODUCTION_URL="https://sagbiagi.web.app/"
+FINAL_URL=$PRODUCTION_URL
 
 # Local Preview check
 if curl -s --max-time 1 http://localhost:4173 > /dev/null; then
-    echo "[Info] Local preview server detected. Using localhost:4173"
+    echo "[Info] Local frontend dev server (Vite) detected."
     FINAL_URL="http://localhost:4173/"
+else
+    echo "Using Production Web URL: $PRODUCTION_URL"
 fi
 
 echo "Target URL: $FINAL_URL"
-
-if command -v xdg-open > /dev/null; then
-    xdg-open "$FINAL_URL" > /dev/null 2>&1
-elif command -v open > /dev/null; then
-    open "$FINAL_URL" > /dev/null 2>&1
-else
-    echo "Please open this URL manually: $FINAL_URL"
-fi
-
-echo -e "\n--- Smartphone Access ---"
-if command -v qrencode > /dev/null; then
-    echo "Scan this QR code with your smartphone to join:"
-    qrencode -t ansiutf8 "$FINAL_URL"
-else
-    echo "Tip: Install 'qrencode' to display a QR code here for easy mobile access."
-fi
+echo "Please open the URL above manually to access SAGBI."
 
 echo "--- SAGBI AGI is running ---"
 echo "Press Ctrl+C to stop all services."

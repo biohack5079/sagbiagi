@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
@@ -16,19 +16,27 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
   const boneCache = useMemo(() => new Map<string, THREE.Object3D>(), [scene]);
 
   // ボーン検索のキャッシュ化
-  const findBone = (name: string): THREE.Object3D | undefined => {
+  const findBone = useCallback((name: string): THREE.Object3D | undefined => {
     const target = name.toLowerCase();
     if (boneCache.has(target)) return boneCache.get(target);
 
     let result: THREE.Object3D | undefined;
     scene.traverse((n) => {
-      if (n.name.toLowerCase().includes(target) && !result) {
+      const boneName = n.name.toLowerCase();
+      // 頭部ボーンの判定を厳格化（髪の毛などの部分一致を避ける）
+      if (target === 'head' && (boneName === 'head' || boneName === 'j_bip_c_head' || boneName === 'neck')) {
         result = n;
+      }
+      if (!result) {
+        const isMatch = (boneName === target) || 
+                        (target.includes('left') && (boneName.includes('left') || boneName.includes('_l')) && (boneName.includes('arm') || boneName.includes('shoulder'))) ||
+                        (target.includes('right') && (boneName.includes('right') || boneName.includes('_r')) && (boneName.includes('arm') || boneName.includes('shoulder')));
+        if (isMatch) result = n;
       }
     });
     if (result) boneCache.set(target, result);
     return result;
-  };
+  }, [scene, boneCache]);
 
   // 初期ポーズとスケールの正規化
   useEffect(() => {
@@ -38,19 +46,45 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
     const scale = 1.8 / size.y;
     scene.scale.set(scale, scale, scale);
     scene.position.y = -box.min.y * scale;
+    scene.position.z = 0;
+
+    // 前回の修正で向きが逆転した可能性があるため、一旦デフォルトに戻します
+    scene.rotation.y = 0; 
     
-    // 初期ポーズ (Natural)
+    // 白目・マテリアル不具合対策
+    // 表示崩れ（白目など）対策
+    scene.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        (obj as THREE.Mesh).frustumCulled = false;
+        const mat = (obj as THREE.Mesh).material;
+        if (mat) {
+          if (Array.isArray(mat)) {
+            mat.forEach((m) => (m.needsUpdate = true));
+          } else {
+            mat.needsUpdate = true;
+          }
+        }
+      }
+    });
+
+    // 全てのボーンを0にすると髪の毛が逆立ち、寄り目になるため、回転順序の設定のみ行います
+    scene.traverse(obj => { 
+      if (obj instanceof THREE.Bone) {
+        obj.rotation.order = 'YXZ';
+      }
+    });
+
     const l = findBone('LeftUpperArm');
     const r = findBone('RightUpperArm');
     const ll = findBone('LeftLowerArm');
     const rr = findBone('RightLowerArm');
     const h = findBone('Head');
-    if (l) l.rotation.set(0, 0, -1.3);  // 腕を下げる
-    if (r) r.rotation.set(0, 0, 1.3);   // 腕を下げる
+    // 腕を下げる方向（負の値が下げ、正の値が上げの場合が多い）
+    if (l) l.rotation.set(0, 0, -1.3); 
+    if (r) r.rotation.set(0, 0, 1.3);
     if (ll) ll.rotation.set(0, 0, 0.2); // 少し内側に曲げる
     if (rr) rr.rotation.set(0, 0, -0.2);
-    if (h) h.rotation.set(0, 0, 0);    // 頭を正面に
-  }, [scene]);
+  }, [scene, findBone]);
 
   // ジェスチャーの状態変化に応じたボーン操作
   useEffect(() => {
@@ -67,7 +101,6 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
         if (r) r.rotation.set(0, 0, 1.3);
         if (ll) ll.rotation.set(0, 0, 0.2);
         if (rr) rr.rotation.set(0, 0, -0.2);
-        if (h) h.rotation.set(0, 0, 0);
     } else if (g.bone) {
         const bone = findBone(g.bone);
         if (bone) bone.rotation.set(...(g.rot as [number, number, number]));
@@ -77,7 +110,7 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
           if (bone) bone.rotation.set(...(g.rot as [number, number, number]));
         });
     }
-  }, [currentGesture]);
+  }, [currentGesture, findBone]);
 
   // 毎フレームのアニメーション（揺れ・リップシンク・特殊アクション）
   useFrame((state) => {
@@ -86,7 +119,7 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
     
     if (groupRef.current) {
       // 基本のアイドル回転
-      groupRef.current.rotation.y = Math.sin(t * 0.5) * 0.05;
+      groupRef.current.rotation.y = Math.sin(t * 0.5) * 0.05; // 既にsceneを反転させたので、ここは微細な揺れのみ
       groupRef.current.position.y = 0;
       groupRef.current.position.z = 0;
 

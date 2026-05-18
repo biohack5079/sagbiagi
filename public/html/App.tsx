@@ -36,6 +36,7 @@ const App: React.FC = () => {
   const triggeredActions = useRef<Set<string>>(new Set());
   const socketRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const dcRef = useRef<RTCDataChannel | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -197,11 +198,29 @@ const App: React.FC = () => {
     }
   }, [isMicActive]);
 
+  // シグナリングメッセージ（SDP/ICE Candidate）の処理
+  const handleSignalingMessage = useCallback(async (payload: any) => {
+    if (!pcRef.current) return;
+    try {
+      if (payload.sdp) {
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        if (payload.sdp.type === 'offer') {
+          const answer = await pcRef.current.createAnswer();
+          await pcRef.current.setLocalDescription(answer);
+          socketRef.current?.send(JSON.stringify({ type: 'signal', payload: { sdp: pcRef.current.localDescription } }));
+        }
+      } else if (payload.candidate) {
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
+      }
+    } catch (e) {
+      console.error("[WebRTC] Signaling error:", e);
+    }
+  }, []);
+
   // WebRTCセッションの開始と再接続ロジック
   const startWebRTCSession = useCallback(async () => {
     console.log("[WebRTC] Starting session...");
-    
-    // 既存の接続があればクリーンアップ
+
     if (pcRef.current) {
       pcRef.current.close();
       pcRef.current = null;
@@ -210,6 +229,27 @@ const App: React.FC = () => {
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
+
+    // DataChannelの設定
+    const setupDataChannel = (channel: RTCDataChannel) => {
+      channel.onopen = () => console.log("[WebRTC] DataChannel Open (Terminal ready)");
+      channel.onmessage = (e) => console.log("[WebRTC] Message from peer:", e.data);
+      channel.onclose = () => { dcRef.current = null; };
+      dcRef.current = channel;
+    };
+
+    // Offer側としてDataChannelを作成
+    const dc = pc.createDataChannel("chat");
+    setupDataChannel(dc);
+
+    // 相手からDataChannelが来た場合も受け入れる
+    pc.ondatachannel = (event) => setupDataChannel(event.channel);
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate && socketRef.current?.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({ type: 'signal', payload: { candidate: event.candidate } }));
+      }
+    };
 
     // refer/cnc/app.js を参考にした再接続メカニズム
     pc.oniceconnectionstatechange = () => {
@@ -239,9 +279,11 @@ const App: React.FC = () => {
 
     pcRef.current = pc;
 
-    // ここでシグナリング（Offer作成など）を開始する
-    // ※サーバー側の実装に合わせてSDP交換のロジックを呼び出してください
-  }, []);
+    // Offerを作成して送信
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    socketRef.current?.send(JSON.stringify({ type: 'signal', payload: { sdp: pc.localDescription } }));
+  }, [socketRef]);
 
   useEffect(() => {
     const url = getSignalingUrl();
@@ -252,6 +294,8 @@ const App: React.FC = () => {
       console.log("[WebSocket] Connection established. Registering...");
       // サーバーにユーザーとして登録。これがないと返信がフィルタリングされる場合があります
       socket.send(JSON.stringify({ type: 'register', payload: { role: 'user' } }));
+      // WebSocketがつながったらWebRTCの準備を開始
+      startWebRTCSession();
     };
 
     socket.onmessage = (event) => {
@@ -296,12 +340,6 @@ const App: React.FC = () => {
     return () => socket.close();
   }, [parseGestures, triggerAutoGesture]);
 
-  const handleSignalingMessage = async (payload: any) => {
-    if (!pcRef.current) return;
-    // refer/cnc/app.js と同様のSDP/ICE Candidate処理をここに実装します
-    // 例: await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-  };
-
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -323,6 +361,11 @@ const App: React.FC = () => {
         done: true
       }
     ]);
+
+
+    if (dcRef.current?.readyState === 'open') {
+      dcRef.current.send(text.trim());
+    }
 
     socketRef.current.send(JSON.stringify({
       type: 'chat_message',

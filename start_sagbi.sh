@@ -161,9 +161,22 @@ fi
 echo "Target URL: $FINAL_URL"
 echo "Please open the URL above manually to access SAGBI."
 
+# 4. Start Terminal Receiver
+if command -v node > /dev/null && [ -f terminal_receiver.js ]; then
+    echo "[4/3] Starting Terminal Chat Receiver..."
+    if [ ! -d "node_modules/ws" ] || [ ! -f "node_modules/wrtc/package.json" ]; then
+        echo "Checking dependencies for terminal receiver..."
+        # wsを優先。wrtcは失敗してもスクリプトを止めないように || true を付ける
+        npm install ws --no-save > /dev/null 2>&1
+        npm install wrtc --no-save > /dev/null 2>&1 || true
+    fi
+    node terminal_receiver.js &
+    RECEIVER_PID=$!
+fi
+
 echo "--- SAGBI AGI is running ---"
 echo "Press Ctrl+C to stop all services."
 
 # Keep the script running to maintain the processes
-trap "kill $SIGNAL_PID $TUNNEL_PID; exit" INT TERM
+trap "kill $SIGNAL_PID $TUNNEL_PID $RECEIVER_PID; exit" INT TERM
 wait

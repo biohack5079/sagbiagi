@@ -165,7 +165,6 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
         const earL = findBone('LeftEar') || findBone('Ear_L'); // 耳のボーンも取得
         const earR = findBone('RightEar') || findBone('Ear_R'); // 耳のボーンも取得
 
-        // 腕の初期設定
         if (l) l.rotation.set(5, 5, 0);
         if (r) r.rotation.set(0, 0, 5);
         if (ll) ll.rotation.set(-0.3, 0, 0);

@@ -15,6 +15,20 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
   const groupRef = useRef<THREE.Group>(null);
   const boneCache = useMemo(() => new Map<string, THREE.Object3D>(), [scene]);
 
+  /**
+   * VRoidモデルのボーンを名前で検索します。
+   * VRoid/VRMモデルはボーン名に様々な命名規則（例: "J_Bip_L_UpperArm", "LeftUpperArm", "mixamorig:LeftArm"）
+   * を使用するため、部分一致や左右の識別子（_L, _R）を考慮して柔軟に検索します。
+   *
+   * @param name 検索するボーンの論理名 (例: 'Head', 'LeftUpperArm', 'RightLowerArm', 'LeftEar')
+   * @returns 見つかったTHREE.Object3D (ボーン) または undefined
+   *
+   * VRoidボーン命名規則の例:
+   * - 頭部: 'Head', 'J_Bip_C_Head'
+   * - 上腕: 'LeftUpperArm', 'J_Bip_L_UpperArm', 'mixamorig:LeftArm'
+   * - 前腕: 'LeftLowerArm', 'J_Bip_L_ForeArm', 'mixamorig:LeftForeArm'
+   * - 耳: 'LeftEar', 'Ear_L'
+   */
   // ボーン検索のキャッシュ化
   const findBone = useCallback((name: string): THREE.Object3D | undefined => {
     const target = name.toLowerCase();
@@ -95,6 +109,10 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
     const ll = findBone('LeftLowerArm');
     const rr = findBone('RightLowerArm');
     
+    // refer/g1m/main.js の初期ポーズ（手を斜め下に下ろしたリラックスした状態）を再現。
+    // VRoidモデルではUpperArmのZ軸回転で腕の上下、LowerArmのX軸回転で肘の曲げを制御することが多い。
+    // 左右で回転方向が逆になる点に注意。
+    // この設定は、モデルのデフォルト姿勢が腕を広げている場合に、自然な立ち姿にするためのものです。
     if (l) l.rotation.set(0, 0, 1.3); 
     if (r) r.rotation.set(0, 0, -1.3);
     // VRoidの肘(LowerArm)は主にX軸で曲がります

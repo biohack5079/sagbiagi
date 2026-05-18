@@ -1,0 +1,141 @@
+.app-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 360px;
+  height: 600px;
+  z-index: 9999;
+  background: #1e1e2f;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  transition: height 0.3s ease;
+  resize: both;
+  min-width: 300px;
+  min-height: 400px;
+  overflow: hidden;
+}
+.app-container.collapsed {
+  height: 52px !important;
+  min-height: 52px !important;
+  resize: none;
+}
+.app-container.maximized {
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0;
+}
+.chat-header {
+  background: #2a2a40;
+  padding: 14px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 3;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: move;
+}
+.chat-status-area { display: flex; align-items: center; gap: 8px; }
+.chat-status-dot { width: 8px; height: 8px; background: #f44336; border-radius: 50%; }
+.chat-status-dot.online { background: #4caf50; }
+.chat-title { color: #ff8eb4; font-weight: bold; font-size: 14px; }
+.chat-btn { background: none; border: none; color: #aaa; cursor: pointer; font-size: 20px; }
+
+.canvas-wrapper {
+  position: absolute;
+  top: 40px;
+  left: 0;
+  width: 100%;
+  height: 250px; /* プレビューエリアとして高さを制限 */
+  z-index: 1;
+  background: linear-gradient(180deg, #2a2a40 0%, #1e1e2f 100%);
+}
+.chat-overlay {
+  position: absolute;
+  top: 290px; /* 3Dエリアの下から開始 */
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  padding: 40px;
+}
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 20px;
+}
+.message {
+  display: flex;
+  pointer-events: auto;
+}
+.media-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.media-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: white;
+}
+.media-btn.active { background: #ff8eb4; }
+.image-preview-container { position: relative; margin-bottom: 10px; }
+.image-preview-container img { max-height: 80px; border-radius: 8px; }
+.remove-btn { position: absolute; top: -5px; right: -5px; background: red; color: white; border: none; border-radius: 50%; cursor: pointer; }
+
+.message.user { justify-content: flex-end; }
+.bubble {
+  max-width: 60%;
+  padding: 12px 20px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.sender { font-size: 0.8em; opacity: 0.6; margin-bottom: 4px; }
+.input-area {
+  pointer-events: auto;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+#chat-input-field {
+  width: 100%;
+  background: #1e1e2f;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: white;
+  font-size: 1.1em;
+  outline: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+.chat-send-btn {
+  background: #ff8eb4;
+  border: none;
+  color: white;
+  padding: 8px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+/* 3D操作を邪魔しないようにスクロールバーを非表示にする設定 */
+.chat-log::-webkit-scrollbar { width: 0; }

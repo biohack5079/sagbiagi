@@ -28,4 +28,11 @@ firebase deploy --only hosting --project xxxxxx
 
 
 git config user.email "xxxxxx@gmail.com"
-git config user.name "xxxxxx5079"
+git config user.name "xxxxxx"
+
+
+npm install
+npm run build
+npm run preview
+./build_frontend.sh
+npm run check

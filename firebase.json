@@ -1,7 +1,7 @@
 {
   "hosting": {
     "site": "sagbiagi", 
-    "public": "public/html",
+    "public": "dist",
     "ignore": [
       "firebase.json",
       "**/.*",

@@ -73,3 +73,8 @@ signaling/rag/
 Thumbs.db
 .vscode/
 .idea/
+
+# Build artifacts & Cache
+dist/
+node_modules/
+*.tsbuildinfo

@@ -279,8 +279,8 @@ function initThreeAgent() {
   const W = agentCanvas.clientWidth || 300, H = 220;
   
   threeScene = new THREE.Scene();
-  threeCamera = new THREE.PerspectiveCamera(30, W / H, 0.1, 100);
-  threeCamera.position.set(0, 1.3, 3.5);
+  threeCamera = new THREE.PerspectiveCamera(45, W / H, 0.1, 100);
+  threeCamera.position.set(0, 1.0, 4.0);
   
   threeRenderer = new THREE.WebGLRenderer({ canvas: agentCanvas, alpha: true, antialias: true });
   threeRenderer.setSize(W, H);
@@ -288,7 +288,11 @@ function initThreeAgent() {
   // マウス操作（回転・ズーム・移動）を追加
   controls = new OrbitControls(threeCamera, threeRenderer.domElement);
   controls.enableDamping = true; // 滑らかに動かす
-  controls.target.set(0, 1.2, 0); // アバターの顔付近を回転の中心にする
+  controls.target.set(0, 0.9, 0); // アバターの体中心付近を回転の中心にする
+
+  // 座標平面 (床) の表示
+  const gridHelper = new THREE.GridHelper(10, 20, 0x888888, 0x444444);
+  threeScene.add(gridHelper);
 
   threeScene.add(new THREE.AmbientLight(0xffffff, 0.8));
   const dirLight = new THREE.DirectionalLight(0xffeedd, 1.2);

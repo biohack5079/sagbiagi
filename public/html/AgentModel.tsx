@@ -13,7 +13,15 @@ interface Props {
 export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPath }) => {
   const { scene } = useGLTF(modelPath);
   const groupRef = useRef<THREE.Group>(null);
-  const boneCache = useMemo(() => new Map<string, THREE.Object3D>(), [scene]);
+
+  // 全ボーンをあらかじめ小文字の名称でインデックス化
+  const boneMap = useMemo(() => {
+    const map = new Map<string, THREE.Object3D>();
+    scene.traverse((node) => {
+      map.set(node.name.toLowerCase(), node);
+    });
+    return map;
+  }, [scene]);
 
   /**
    * VRoidモデルのボーンを名前で検索します。
@@ -29,37 +37,37 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
    * - 前腕: 'LeftLowerArm', 'J_Bip_L_ForeArm', 'mixamorig:LeftForeArm'
    * - 耳: 'LeftEar', 'Ear_L'
    */
-  // ボーン検索のキャッシュ化
   const findBone = useCallback((name: string): THREE.Object3D | undefined => {
     const target = name.toLowerCase();
-    if (boneCache.has(target)) return boneCache.get(target);
+    
+    // 1. 完全一致（またはインデックス済み）
+    if (boneMap.has(target)) return boneMap.get(target);
 
-    let result: THREE.Object3D | undefined;
-    scene.traverse((n) => {
-      const boneName = n.name.toLowerCase();
-      // 頭部・耳ボーンの判定
-      if (target === 'head' && (boneName === 'head' || boneName === 'j_bip_c_head' || boneName === 'neck')) {
-        result = n;
-      }
-      if (!result) {
-        // 左右の判定
-        const isSideMatch = (target.includes('left') && (boneName.includes('left') || boneName.includes('_l'))) ||
-                            (target.includes('right') && (boneName.includes('right') || boneName.includes('_r')));
-        // 上腕(Upper)と前腕(Lower)の厳密な区別
-        const isPartMatch = (target.includes('lower') === (boneName.includes('lower') || boneName.includes('fore'))) &&
-                            (target.includes('upper') === (boneName.includes('upper') || (boneName.includes('arm') && !boneName.includes('lower') && !boneName.includes('fore'))));
+    // 2. VRM/VRoid 0.x 系特有の命名規則 (J_Bip_...) へのフォールバック
+    if (target === 'head') return boneMap.get('j_bip_c_head') || boneMap.get('neck');
+    
+    // 3. 部分一致による検索
+    let found: THREE.Object3D | undefined;
+    for (const [boneName, node] of boneMap.entries()) {
+      const isSideMatch = (target.includes('left') && (boneName.includes('left') || boneName.includes('_l'))) ||
+                          (target.includes('right') && (boneName.includes('right') || boneName.includes('_r')));
+      
+      if (!isSideMatch && !target.includes('head') && !target.includes('ear')) continue;
 
-        const isMatch = (boneName === target) || (isSideMatch && isPartMatch && (boneName.includes('arm') || boneName.includes('shoulder')));
-        if (isMatch) result = n;
+      // 部位の判定
+      const isPartMatch = 
+        (target.includes('lower') && (boneName.includes('lower') || boneName.includes('fore'))) ||
+        (target.includes('upper') && (boneName.includes('upper') || (boneName.includes('arm') && !boneName.includes('lower')))) ||
+        (target.includes('ear') && boneName.includes('ear'));
+
+      if (isSideMatch && isPartMatch) {
+        found = node;
+        break;
       }
-      // 耳の検索を個別に追加
-      if (!result && target.includes('ear') && boneName.includes(target)) {
-        result = n;
-      }
-    });
-    if (result) boneCache.set(target, result);
-    return result;
-  }, [scene, boneCache]);
+    }
+
+    return found;
+  }, [boneMap]);
 
   // 初期ポーズとスケールの正規化
   useEffect(() => {

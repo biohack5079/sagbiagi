@@ -11,9 +11,11 @@ const getSignalingUrl = () => {
   let url = urlParams.get('s');
   if (url) return url;
 
-  // localhost で実行中の場合は、ローカルのシグナリングサーバーを優先
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return `ws://localhost:8080/ws/chat`;
+  // localhost (dev/preview) の場合は 8080番ポートの Goサーバーを優先
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.')) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${host}:8080/ws/chat`;
   } else {
     const workerHost = "sagbi.biohack5079.workers.dev";
     // Workerプロキシは wss が必須なため、プロトコルを wss に固定
@@ -133,9 +135,9 @@ const App: React.FC = () => {
 
     const rect = containerRef.current?.getBoundingClientRect();
     if (rect) {
-      // 右下の角（リサイズハンドル付近 30px）をクリックした時はドラッグ移動を無効にする
-      const isNearEdgeX = e.clientX > rect.right - 30;
-      const isNearEdgeY = e.clientY > rect.bottom - 30;
+      // 右下の角（リサイズハンドル付近 40px）をクリックした時はドラッグ移動を無効にする
+      const isNearEdgeX = e.clientX > rect.right - 40;
+      const isNearEdgeY = e.clientY > rect.bottom - 40;
       if (isNearEdgeX && isNearEdgeY) return;
     }
     
@@ -204,19 +206,18 @@ const App: React.FC = () => {
       if (type === 'chat_response' || type === 'chat_message') {
         const isAi = type === 'chat_response';
         const msgId = payload.id;
-        const rawText = payload.text || '';
+        const rawText = payload.text;
 
         setMessages((prev) => {
           const existingIndex = prev.findIndex((m) => m.id === msgId);
-          const text = parseGestures(rawText, msgId);
+          const text = (rawText !== undefined && rawText !== null) ? parseGestures(rawText, msgId) : '';
 
           if (existingIndex !== -1) {
             const updated = [...prev];
-            updated[existingIndex].text = text;
-            updated[existingIndex].done = payload.done;
+            updated[existingIndex] = { ...updated[existingIndex], text, done: payload.done };
             return updated;
           }
-          return [...prev, { id: msgId, text: text || '', isUser: !isAi, senderName: from || (isAi ? 'sagbi' : 'You'), image: payload.image, done: payload.done }];
+          return [...prev, { id: msgId, text: text, isUser: !isAi, senderName: from || (isAi ? 'sagbi' : 'You'), image: payload.image, done: payload.done }];
         });
 
         if (isAi) {

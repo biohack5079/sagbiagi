@@ -72,7 +72,7 @@ const App: React.FC = () => {
   }, []);
 
   // カメラの切り替え（背面カメラ優先）
-  const toggleCamera = async () => {
+  const toggleCamera = useCallback(async () => {
     if (isCamActive) {
       stream?.getTracks().forEach(track => track.stop());
       setStream(null);
@@ -89,16 +89,20 @@ const App: React.FC = () => {
         console.error("Camera access failed:", err);
       }
     }
-  };
+  }, [isCamActive, stream]);
 
   // ヘッダーダブルクリックでの最大化切り替え
   const handleDoubleClick = () => {
     setIsMaximized(!isMaximized);
   };
 
-  // マウスドラッグ移動のロジック
+  // フレーム全体でのマウスドラッグ移動
   const handleMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.chat-btn')) return;
+    const target = e.target as HTMLElement;
+    // 入力欄やボタン、3D操作エリア（Canvas）をクリックした時はドラッグしない
+    if (target.closest('button') || target.closest('input') || target.closest('textarea') || target.closest('.media-controls') || target.tagName === 'CANVAS') {
+      return;
+    }
     
     const container = containerRef.current;
     if (!container) return;
@@ -164,24 +168,44 @@ const App: React.FC = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  if (!isOpen) return null;
-
   const sendMessage = (text: string) => {
     if ((!text.trim() && !previewImage) || !socketRef.current) return;
-    
-    // カメラがONの場合は静止画をキャプチャして送るロジックを入れることも可能
-    socketRef.current.send(JSON.stringify({ 
-      type: 'chat_message', 
-      payload: { 
+
+    const tempId = "user-" + crypto.randomUUID();
+
+    // ユーザーのメッセージを即座にローカル表示に追加 (chat.jsのロジックを踏襲)
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tempId,
         text: text.trim(),
-        image: previewImage?.split(',')[1]
-      } 
+        isUser: true,
+        senderName: 'You',
+        image: previewImage || undefined,
+        done: true
+      }
+    ]);
+
+    socketRef.current.send(JSON.stringify({
+      type: 'chat_message',
+      payload: {
+        text: text.trim(),
+        image: previewImage?.split(',')[1],
+        id: tempId
+      }
     }));
+
+    setPreviewImage(null);
   };
 
   return (
-    <div ref={containerRef} className={`app-container ${isCollapsed ? 'collapsed' : ''} ${isMaximized ? 'maximized' : ''}`} style={{ display: isOpen ? 'flex' : 'none' }}>
-      <div className="chat-header" onMouseDown={handleMouseDown} onDoubleClick={handleDoubleClick}>
+    <div 
+      ref={containerRef} 
+      className={`app-container ${isCollapsed ? 'collapsed' : ''} ${isMaximized ? 'maximized' : ''}`} 
+      style={{ display: isOpen ? 'flex' : 'none' }}
+      onMouseDown={handleMouseDown}
+    >
+      <div className="chat-header" onDoubleClick={handleDoubleClick}>
         <div className="chat-status-area">
           <div className={`chat-status-dot ${socketRef.current?.readyState === 1 ? 'online' : ''}`}></div>
           <span className="chat-title">SAGBI AGI</span>
@@ -247,10 +271,10 @@ const App: React.FC = () => {
               }
             }} />
           </div>
-          <div style={{display:'flex', gap:'8px', alignItems:'flex-end'}}>
+          <div className="input-row-flex">
             <textarea 
               id="chat-input"
-              placeholder="聞きたいことを入力..." 
+              placeholder="聞きたいことを入力..."
               rows={1}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -272,7 +296,7 @@ const App: React.FC = () => {
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 export default App;

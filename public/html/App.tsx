@@ -35,6 +35,7 @@ const App: React.FC = () => {
   const [currentGesture, setCurrentGesture] = useState('reset');
   const triggeredActions = useRef<Set<string>>(new Set());
   const socketRef = useRef<WebSocket | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -196,6 +197,52 @@ const App: React.FC = () => {
     }
   }, [isMicActive]);
 
+  // WebRTCセッションの開始と再接続ロジック
+  const startWebRTCSession = useCallback(async () => {
+    console.log("[WebRTC] Starting session...");
+    
+    // 既存の接続があればクリーンアップ
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    // refer/cnc/app.js を参考にした再接続メカニズム
+    pc.oniceconnectionstatechange = () => {
+      const state = pc.iceConnectionState;
+      console.log(`[WebRTC State] ${state}`);
+
+      if (state === 'failed' || state === 'disconnected') {
+        console.warn("[WebRTC] Connection lost. Attempting to reconnect...");
+        setCurrentGesture('thinking'); // 視覚的なフィードバック
+        
+        // 3秒後に再接続を試行
+        setTimeout(() => {
+          if (socketRef.current?.readyState === WebSocket.OPEN) {
+            startWebRTCSession();
+          }
+        }, 3000);
+      } else if (state === 'connected') {
+        setCurrentGesture('reset');
+      }
+    };
+
+    // トラックの受信設定
+    pc.ontrack = (event) => {
+      console.log("[WebRTC] Received remote track");
+      // 必要に応じてリモートビデオを表示するロジックをここに追加
+    };
+
+    pcRef.current = pc;
+
+    // ここでシグナリング（Offer作成など）を開始する
+    // ※サーバー側の実装に合わせてSDP交換のロジックを呼び出してください
+  }, []);
+
   useEffect(() => {
     const url = getSignalingUrl();
     const socket = new WebSocket(url);
@@ -235,11 +282,25 @@ const App: React.FC = () => {
           setIsTalking(!payload.done);
           if (payload.done) triggerAutoGesture(rawText);
         }
+      } else if (type === 'signal') {
+        // WebRTCシグナリングの処理 (Offer/Answer/Candidate)
+        handleSignalingMessage(payload);
       }
+    };
+
+    socket.onclose = () => {
+      console.warn("[WebSocket] Disconnected. Reconnecting chat...");
+      // 必要であればWebSocket自体の再接続ロジックもここに追加
     };
 
     return () => socket.close();
   }, [parseGestures, triggerAutoGesture]);
+
+  const handleSignalingMessage = async (payload: any) => {
+    if (!pcRef.current) return;
+    // refer/cnc/app.js と同様のSDP/ICE Candidate処理をここに実装します
+    // 例: await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+  };
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });

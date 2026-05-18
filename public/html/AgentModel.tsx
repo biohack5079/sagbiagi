@@ -28,9 +28,14 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
         result = n;
       }
       if (!result) {
-        const isMatch = (boneName === target) || 
-                        (target.includes('left') && (boneName.includes('left') || boneName.includes('_l')) && (boneName.includes('arm') || boneName.includes('shoulder'))) ||
-                        (target.includes('right') && (boneName.includes('right') || boneName.includes('_r')) && (boneName.includes('arm') || boneName.includes('shoulder')));
+        // 左右の判定
+        const isSideMatch = (target.includes('left') && (boneName.includes('left') || boneName.includes('_l'))) ||
+                            (target.includes('right') && (boneName.includes('right') || boneName.includes('_r')));
+        // 上腕(Upper)と前腕(Lower)の厳密な区別
+        const isPartMatch = (target.includes('lower') === (boneName.includes('lower') || boneName.includes('fore'))) &&
+                            (target.includes('upper') === (boneName.includes('upper') || (boneName.includes('arm') && !boneName.includes('lower') && !boneName.includes('fore'))));
+
+        const isMatch = (boneName === target) || (isSideMatch && isPartMatch && (boneName.includes('arm') || boneName.includes('shoulder')));
         if (isMatch) result = n;
       }
       // 耳の検索を個別に追加
@@ -71,10 +76,17 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
       }
     });
 
-    // 全てのボーンを0にすると髪の毛が逆立ち、寄り目になるため、回転順序の設定のみ行います
+    // 髪の毛ボーンの参照と初期回転を保持
+    const hairBones: { bone: THREE.Bone; original: THREE.Euler }[] = [];
+
     scene.traverse(obj => { 
       if (obj instanceof THREE.Bone) {
         obj.rotation.order = 'YXZ';
+
+        if (obj.name.toLowerCase().includes('hair')) {
+          hairBones.push({ bone: obj, original: obj.rotation.clone() });
+          obj.rotation.set(0, 0, 0); // 0にすると多くのVRoidで逆立ちます
+        }
       }
     });
 
@@ -82,28 +94,36 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
     const r = findBone('RightUpperArm');
     const ll = findBone('LeftLowerArm');
     const rr = findBone('RightLowerArm');
-    const h = findBone('Head');
     
-    // 腕の回転方向を反転（斜め上から下へ）
     if (l) l.rotation.set(0, 0, 1.3); 
     if (r) r.rotation.set(0, 0, -1.3);
-    if (ll) ll.rotation.set(0, 0, 0.2); // 少し内側に曲げる
-    if (rr) rr.rotation.set(0, 0, -0.2);
+    // VRoidの肘(LowerArm)は主にX軸で曲がります
+    if (ll) ll.rotation.set(-0.3, 0, 0); 
+    if (rr) rr.rotation.set(-0.3, 0, 0);
     
-    const timer = setTimeout(() => {
+    const settleTimer = setTimeout(() => {
+      hairBones.forEach(({ bone, original }) => {
+        bone.rotation.copy(original);
+      });
+    }, 800);
+
+    const earTimer = setTimeout(() => {
       const earL = findBone('LeftEar') || findBone('Ear_L');
       const earR = findBone('RightEar') || findBone('Ear_R');
       if (earL && earR) {
-        earL.rotation.z = 0.4;
-        earR.rotation.z = -0.4;
+        earL.rotation.z = 0.6; // 少し強めに動かす
+        earR.rotation.z = -0.6;
         setTimeout(() => {
           earL.rotation.z = 0;
           earR.rotation.z = 0;
         }, 400);
       }
-    }, 2000);
+    }, 1500);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(settleTimer);
+      clearTimeout(earTimer);
+    };
   }, [scene, findBone]);
 
   // ジェスチャーの状態変化に応じたボーン操作
@@ -119,8 +139,8 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
         const h = findBone('Head');
         if (l) l.rotation.set(0, 0, 1.3);
         if (r) r.rotation.set(0, 0, -1.3);
-        if (ll) ll.rotation.set(0, 0, 0.2);
-        if (rr) rr.rotation.set(0, 0, -0.2);
+        if (ll) ll.rotation.set(-0.3, 0, 0);
+        if (rr) rr.rotation.set(-0.3, 0, 0);
     } else if (g.bone) {
         const bone = findBone(g.bone);
         if (bone) bone.rotation.set(...(g.rot as [number, number, number]));

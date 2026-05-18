@@ -203,7 +203,7 @@ spec:
         lifecycle:
           postStart:
             exec:
-              # コンテナ起動時にモデルが存在しない場合は自動的にプルするように仕込む
+              # コンテナ起動時にモデルが存在しない場合は自動的にプルする
               command: ["/bin/sh", "-c", "sleep 5 && ollama pull gemma3:4b-it-q4_K_M"]
         securityContext:
           runAsUser: 1000

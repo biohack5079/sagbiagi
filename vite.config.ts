@@ -15,7 +15,15 @@ export default defineConfig({
     outDir: '../../dist', // ビルド済みJSの出力先
     emptyOutDir: true,
     rollupOptions: {
-      input: resolve(__dirname, 'public/html/index.html'),
+      input: {
+        index: resolve(__dirname, 'public/html/index.html'),
+        plower: resolve(__dirname, 'public/html/plower.html'),
+        'plower/index': resolve(__dirname, 'public/html/plower/index.html'),
+        'plower/manual': resolve(__dirname, 'public/html/plower/manual.html'),
+        profile: resolve(__dirname, 'public/html/profile.html'),
+        kitaiti: resolve(__dirname, 'public/html/kitaiti.html'),
+        '404': resolve(__dirname, 'public/html/404.html'),
+      },
       output: {
         manualChunks: {
           // 大型のライブラリをベンダーチャックとして分離

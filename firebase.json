@@ -2,6 +2,17 @@
   "hosting": {
     "site": "sagbiagi", 
     "public": "dist",
+    "cleanUrls": true,
+    "rewrites": [
+      {
+        "source": "/plower",
+        "destination": "/plower.html"
+      },
+      {
+        "source": "/plower/",
+        "destination": "/plower/index.html"
+      }
+    ],
     "ignore": [
       "firebase.json",
       "**/.*",

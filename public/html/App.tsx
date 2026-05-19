@@ -52,7 +52,9 @@ const App: React.FC = () => {
   // 履歴が変わるたびに保存
   useEffect(() => {
     messagesRef.current = messages;
-    localStorage.setItem('sagbi_history', JSON.stringify(messages));
+    // 端末の負担を減らすため、保存も直近100件に絞る
+    const clipped = messages.slice(-100);
+    localStorage.setItem('sagbi_history', JSON.stringify(clipped));
   }, [messages]);
 
   // テキスト内のタグ（ジェスチャー・画像）を解析
@@ -463,7 +465,10 @@ const App: React.FC = () => {
           <span className="chat-title">SAGBI AGI</span>
         </div>
         <div className="chat-controls">
-          <button className="chat-btn" onClick={() => setMessages([])} title="履歴を消去">
+          <button className="chat-btn" onClick={() => {
+            setMessages([]);
+            localStorage.removeItem('sagbi_history');
+          }} title="表示をクリア">
             🗑️
           </button>
           <button className="chat-btn" onClick={() => setIsCollapsed(!isCollapsed)}>

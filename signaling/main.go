@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	_ "modernc.org/sqlite"
 )
 
 // RAGキャッシュ用
@@ -31,7 +33,7 @@ var (
 var (
 	globalHistory []ChatPayload
 	historyMu     sync.Mutex
-	persistFile   = "history_state.json"
+	db            *sql.DB
 )
 
 // ── Configuration ────────────────────────────────────────────
@@ -54,27 +56,87 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// 履歴をファイルに保存
-func saveHistory() {
-	historyMu.Lock()
-	defer historyMu.Unlock()
-	data, _ := json.Marshal(globalHistory)
-	_ = os.WriteFile(persistFile, data, 0644)
+// データベースの初期化
+func initDB() {
+	dataDir := "../data"
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		log.Fatalf("[DB Error] Failed to create data directory %s: %v", dataDir, err)
+	}
+	dbPath := filepath.Join(dataDir, "sagbi.db")
+
+	var err error
+	db, err = sql.Open("sqlite", dbPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// UUID (ID) を主キーとしたメッセージテーブルの作成
+	query := `
+	CREATE TABLE IF NOT EXISTS messages (
+		id TEXT PRIMARY KEY,
+		text TEXT,
+		image TEXT,
+		is_user BOOLEAN,
+		sender_name TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE TABLE IF NOT EXISTS audit_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		msg_id TEXT,
+		text TEXT,
+		image TEXT,
+		is_user BOOLEAN,
+		sender_name TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);`
+	_, err = db.Exec(query)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("[DB] Initialized at %s", dbPath)
 }
 
-// 履歴をファイルから読み込み
+// メッセージをDBに保存
+func saveToDB(p ChatPayload) {
+	historyMu.Lock()
+	defer historyMu.Unlock()
+
+	_, err := db.Exec(
+		"INSERT OR REPLACE INTO messages (id, text, image, is_user, sender_name) VALUES (?, ?, ?, ?, ?)",
+		p.ID, p.Text, p.Image, p.IsUser, p.SenderName,
+	)
+	if err != nil {
+		log.Printf("[DB Error] Failed to save message: %v", err)
+	}
+
+	// 監査ログへの挿入（こちらは REPLACE せず、すべての試行を追記保存する）
+	_, err = db.Exec(
+		"INSERT INTO audit_log (msg_id, text, image, is_user, sender_name) VALUES (?, ?, ?, ?, ?)",
+		p.ID, p.Text, p.Image, p.IsUser, p.SenderName,
+	)
+}
+
+// 履歴をDBから読み込み
 func loadHistory() {
 	historyMu.Lock()
 	defer historyMu.Unlock()
-	data, err := os.ReadFile(persistFile)
-	if err == nil {
-		json.Unmarshal(data, &globalHistory)
-		log.Printf("[Init] Loaded %d messages from history file", len(globalHistory))
+
+	// 直近100件の履歴のみをメモリに展開する（表示用）
+	rows, err := db.Query("SELECT id, text, image, is_user, sender_name FROM (SELECT * FROM messages ORDER BY created_at DESC LIMIT 100) ORDER BY created_at ASC")
+	if err != nil {
+		log.Printf("[DB Error] Failed to load history: %v", err)
+		return
 	}
-	// 起動時にディレクトリ設定を反映
-	if historyDir != "" {
-		_ = os.MkdirAll(historyDir, 0755)
+	defer rows.Close()
+
+	globalHistory = []ChatPayload{}
+	for rows.Next() {
+		var p ChatPayload
+		if err := rows.Scan(&p.ID, &p.Text, &p.Image, &p.IsUser, &p.SenderName); err == nil {
+			globalHistory = append(globalHistory, p)
+		}
 	}
+	log.Printf("[DB] Loaded %d messages", len(globalHistory))
 }
 
 // ── WebSocket upgrader ───────────────────────────────────────
@@ -220,13 +282,35 @@ func searchRAG(query string) string {
 	ragMu.Lock()
 	defer ragMu.Unlock()
 
+	var context bytes.Buffer
+
+	// --- 1. Database Search (Long-term Memory RAG) ---
+	// 過去の全会話履歴から、現在のクエリに関連するものを検索してコンテキストに含める
+	if db != nil {
+		// シンプルなLIKE検索で関連発言を抽出（RAGソースとして活用）
+		rows, err := db.Query(
+			"SELECT sender_name, text FROM messages WHERE text LIKE ? ORDER BY created_at DESC LIMIT 5",
+			"%"+query+"%",
+		)
+		if err == nil {
+			defer rows.Close()
+			context.WriteString("\n--- Relevant Past Conversations (Retrieved from DB) ---\n")
+			for rows.Next() {
+				var name, txt string
+				if err := rows.Scan(&name, &txt); err == nil {
+					context.WriteString(fmt.Sprintf("[%s]: %s\n", name, txt))
+				}
+			}
+		}
+	}
+
+	// --- 2. File-based Knowledge Search ---
 	files, err := os.ReadDir(ragSourceDir)
 	if err != nil {
 		log.Printf("Warning: Could not read RAG directory '%s'. Please ensure it exists and has correct permissions: %v", ragSourceDir, err)
 		return ""
 	}
 
-	var context bytes.Buffer
 	for _, file := range files {
 		// .txt または .md ファイルを対象
 		if !file.IsDir() && (filepath.Ext(file.Name()) == ".txt" || filepath.Ext(file.Name()) == ".md") {
@@ -239,6 +323,33 @@ func searchRAG(query string) string {
 	ragCache = context.String()
 	lastRagCheck = time.Now()
 	return context.String()
+}
+
+// getConversationContext はDBから最新の会話履歴を取得し、LLM用のメッセージ形式に変換します
+func getConversationContext(limit int) []OllamaChatMessage {
+	historyMu.Lock()
+	defer historyMu.Unlock()
+
+	rows, err := db.Query("SELECT text, is_user, sender_name FROM messages ORDER BY created_at DESC LIMIT ?", limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var history []OllamaChatMessage
+	for rows.Next() {
+		var text, sender string
+		var isUser bool
+		if err := rows.Scan(&text, &isUser, &sender); err == nil {
+			role := "user"
+			if !isUser {
+				role = "assistant"
+			}
+			// 最新が最後に来るように先頭に追加
+			history = append([]OllamaChatMessage{{Role: role, Content: text}}, history...)
+		}
+	}
+	return history
 }
 
 // queryOllama now accepts a callback to stream tokens back to the client
@@ -257,13 +368,20 @@ func queryOllama(payload ChatPayload, onChunk func(string)) error {
 	systemInstructions := string(content)
 
 	messages := []OllamaChatMessage{
-		{Role: "system", Content: systemInstructions},
+		{Role: "system", Content: systemInstructions + "\nあなたは過去の会話履歴を尊重し、ユーザーを一貫性のある個人として扱ってください。"},
 	}
 
-	context := searchRAG(payload.Text)
-	if context != "" {
+	// 1. RAG（知識ベース）からの検索結果を追加
+	ragContext := searchRAG(payload.Text)
+	if ragContext != "" {
 		// システムプロンプトを統合して優先順位を維持
-		messages[0].Content += "\n\nReference from local knowledge:\n" + context
+		messages[0].Content += "\n\nReference from local knowledge:\n" + ragContext
+	}
+
+	// 2. DBから「最近の記憶」を取得して追加
+	recentHistory := getConversationContext(10) // 直近10発言をコンテキストに含める
+	if len(recentHistory) > 0 {
+		messages = append(messages, recentHistory...)
 	}
 
 	userMsg := OllamaChatMessage{
@@ -403,12 +521,16 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				for _, m := range p.History {
 					if m.ID != "" && !existingIDs[m.ID] {
 						globalHistory = append(globalHistory, m)
+						// メモリ保持分を100件に制限
+						if len(globalHistory) > 100 {
+							globalHistory = globalHistory[1:]
+						}
+						saveToDB(m)
 						mergedCount++
 					}
 				}
 				historyMu.Unlock()
 				if mergedCount > 0 {
-					saveHistory()
 					syncMsg, _ := json.Marshal(WSMessage{Type: "history", History: globalHistory})
 					hub.broadcast(syncMsg, c)
 					log.Printf("[WS] Merged %d new items from %s", mergedCount, c.id)
@@ -446,8 +568,12 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 
 			historyMu.Lock()
 			globalHistory = append(globalHistory, p)
+			// メモリ保持分を100件に制限
+			if len(globalHistory) > 100 {
+				globalHistory = globalHistory[1:]
+			}
 			historyMu.Unlock()
-			saveHistory()
+			saveToDB(p)
 
 			msg.Payload, _ = json.Marshal(p)
 			broadcastRaw, _ := json.Marshal(msg)
@@ -520,11 +646,16 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 					})
 					// 履歴に追加
 					historyMu.Lock()
-					globalHistory = append(globalHistory, ChatPayload{
+					aiPayload := ChatPayload{
 						Text: fullAnswer.String(), ID: aiResponseID, Done: true, IsUser: false, SenderName: "SAGBI AI",
-					})
+					}
+					globalHistory = append(globalHistory, aiPayload)
+					// メモリ保持分を100件に制限
+					if len(globalHistory) > 100 {
+						globalHistory = globalHistory[1:]
+					}
 					historyMu.Unlock()
-					saveHistory()
+					saveToDB(aiPayload)
 
 					finalBytes, _ := json.Marshal(respMsg)
 					hub.broadcast(finalBytes, nil)
@@ -545,6 +676,11 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			msg.From = c.id
 			enrichedRaw, _ := json.Marshal(msg)
 			hub.broadcast(enrichedRaw, c)
+
+		case "clear_history":
+			// ユーザーがゴミ箱ボタンを押しても、サーバー側のセッションメモリやDBは一切消去しない。
+			// 管理用（証拠）として、クリア操作が行われた時刻とクライアントIDを記録する。
+			log.Printf("[Audit] Local display cleared by client: %s (Role: %s). Database record is preserved for RAG.", c.id, c.role)
 
 		default:
 			log.Printf("[WS] Unknown message type: %s", msg.Type)
@@ -567,6 +703,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 // ── Main ─────────────────────────────────────────────────────
 func main() {
+	initDB()
 	loadHistory()
 
 	mux := http.NewServeMux()

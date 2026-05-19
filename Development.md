@@ -351,7 +351,39 @@ To ensure everything is running correctly in Kubernetes, use these commands:
    `kubectl exec -it -n sagbi deployment/signaler -- curl -s http://localhost:8080/healthz`
 
 ---
-### 5️⃣ Distribution
+### 5️⃣ Migration / Manual Setup
+別環境への移行や、新規環境での手動構築時には以下の手順で依存関係とデータディレクトリを準備してください。
+
+#### 5.1 Go 依存関係の初期化 (SQLite)
+シグナリングサーバーで使用する Pure Go 実装の SQLite ドライバーをインストールします。
+```bash
+cd signaling
+go get modernc.org/sqlite
+go mod tidy
+```
+
+#### 5.2 データ保存ディレクトリ
+会話履歴はプロジェクトルートの `data/` ディレクトリに SQLite DB として保存されます。
+- **DBパス:** `sagbiagi/data/sagbi.db`
+- **注意:** `data/` フォルダは `.gitignore` により Git 管理から除外されています。
+
+#### 5.3 DBの内容確認・編集 (Manual)
+`sqlite3` コマンドラインツールを使用して、保存されたメッセージを直接操作できます。
+```bash
+# インストール
+sudo apt install sqlite3
+
+# 接続
+sqlite3 data/sagbi.db
+
+# クエリ例
+sqlite> .headers on
+sqlite> .mode column
+sqlite> SELECT sender_name, text FROM messages;
+```
+
+---
+### 6️⃣ Distribution
 1. **GitHub Releases**
    - Upload `sagbi_installer_linux.sh` and the Windows `sagbi_install.exe`.
    - Update `public/html/index.html` links to point at the appropriate asset (already done for Windows, add similar Linux link).

@@ -47,19 +47,23 @@ const App: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
+  const messagesRef = useRef<Message[]>([]);
 
   // 履歴が変わるたびに保存
   useEffect(() => {
+    messagesRef.current = messages;
     localStorage.setItem('sagbi_history', JSON.stringify(messages));
   }, [messages]);
 
-  // [wave] 等のタグを解析してジェスチャーを発動
-  const parseGestures = useCallback((text: string, msgId: string) => {
-    const regex = /\[(?:ACTION:)?([a-z_]+)\]/gi;
-    const plainText = text.replace(regex, (_, key) => {
+  // テキスト内のタグ（ジェスチャー・画像）を解析
+  const parseContent = useCallback((text: string, msgId: string) => {
+    let extractedImage: string | undefined;
+    
+    // ジェスチャーの抽出: [wave], [ACTION:nod] など
+    const gestureRegex = /\[(?:ACTION:)?([a-z_]+)\]/gi;
+    let processedText = text.replace(gestureRegex, (_, key) => {
       const gestureKey = key.toLowerCase();
       const triggerKey = `${msgId}-${gestureKey}`;
-
       if (GESTURES[gestureKey] && !triggeredActions.current.has(triggerKey)) {
         triggeredActions.current.add(triggerKey);
         setCurrentGesture(gestureKey);
@@ -67,7 +71,15 @@ const App: React.FC = () => {
       }
       return '';
     });
-    return plainText;
+
+    // 画像タグの抽出: [IMAGE: url_or_base64]
+    const imageRegex = /\[IMAGE:(.+?)\]/gi;
+    processedText = processedText.replace(imageRegex, (_, data) => {
+      extractedImage = data.trim();
+      return '';
+    });
+
+    return { text: processedText, image: extractedImage };
   }, []);
 
   // 文脈から自動的にジェスチャーを推論
@@ -303,7 +315,11 @@ const App: React.FC = () => {
 
     socket.onopen = () => {
       console.log("[WebSocket] Connection established. Registering...");
-      socket.send(JSON.stringify({ type: 'register', payload: { role: 'user' } }));
+      // 接続時にローカルの履歴をサーバーに送り、同期を図る
+      socket.send(JSON.stringify({ 
+        type: 'register', 
+        payload: { role: 'user', history: messagesRef.current } 
+      }));
       setSocketStatus(WebSocket.OPEN);
       startWebRTCSession();
     };
@@ -311,25 +327,45 @@ const App: React.FC = () => {
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
       console.log("[WebSocket] Received:", data); // デバッグ用ログを追加
-      const { type, payload, from } = data;
+      const { type, payload, from, history } = data;
 
-      if (type === 'chat_response' || type === 'chat_message') {
+      if (type === 'history' && history) {
+        // サーバーから送られてきた履歴でローカルを更新（型変換）
+        const formatted = history.map((h: any) => ({
+          id: h.id,
+          text: h.text,
+          isUser: h.isUser,
+          senderName: h.senderName || (h.isUser ? 'You' : 'SAGBI AI'),
+          image: h.image,
+          done: h.done
+        }));
+        setMessages(formatted);
+      } else if (type === 'chat_response' || type === 'chat_message') {
         const isAi = type === 'chat_response';
         const msgId = payload.id || (isAi ? 'ai-current' : 'user-current');
         const rawText = payload.text;
 
         setMessages((prev) => {
           const existingIndex = prev.findIndex((m) => m.id === msgId);
-          // chat.jsと同様、累積テキストで上書きする
-          const text = rawText !== undefined ? parseGestures(rawText, msgId) : undefined;
+          const { text, image: parsedImage } = rawText !== undefined 
+            ? parseContent(rawText, msgId) 
+            : { text: undefined, image: undefined };
 
           if (existingIndex !== -1) {
             const updated = [...prev];
             if (text !== undefined) updated[existingIndex].text = text;
+            if (parsedImage) updated[existingIndex].image = parsedImage;
             updated[existingIndex].done = !!payload.done;
             return updated;
           }
-          return [...prev, { id: msgId, text: text || (isAi ? '...' : ''), isUser: !isAi, senderName: from || (isAi ? 'sagbiちゃん' : 'You'), image: payload.image, done: !!payload.done }];
+          return [...prev, { 
+            id: msgId, 
+            text: text || (isAi ? '...' : ''), 
+            isUser: !isAi, 
+            senderName: from || (isAi ? 'sagbiちゃん' : 'You'), 
+            image: payload.image || parsedImage, 
+            done: !!payload.done 
+          }];
         });
 
         if (isAi) {
@@ -343,17 +379,17 @@ const App: React.FC = () => {
     };
 
     socket.onclose = () => {
-      console.warn("[WebSocket] Disconnected. Reconnecting in 5s...");
+      console.warn("[WebSocket] Disconnected. Reconnecting in 2s...");
       setSocketStatus(WebSocket.CLOSED);
-      // 5秒後に自動再接続
-      setTimeout(connectWebSocket, 5000);
+      // PCの休止復帰時などを考慮し、早めに再接続を試みる
+      setTimeout(connectWebSocket, 2000);
     };
 
     socket.onerror = (err) => {
       console.error("[WebSocket] Error:", err);
       setSocketStatus(WebSocket.CLOSED);
     };
-  }, [parseGestures, triggerAutoGesture, startWebRTCSession]);
+  }, [parseContent, triggerAutoGesture, startWebRTCSession]);
 
   useEffect(() => {
     connectWebSocket();
@@ -456,7 +492,13 @@ const App: React.FC = () => {
             <div key={m.id} className={`message ${m.isUser ? 'user' : 'ai'}`}>
               <div className="bubble">
                 <div className="sender">{m.senderName}</div>
-                {m.image && <img src={m.image.startsWith('data:') ? m.image : `data:image/jpeg;base64,${m.image}`} alt="attached" className="bubble-img" />}
+                {m.image && (
+                  <img 
+                    src={m.image.startsWith('data:') || m.image.startsWith('http') ? m.image : `data:image/jpeg;base64,${m.image}`} 
+                    alt="attached" 
+                    className="bubble-img" 
+                  />
+                )}
                 <div className="text">
                   {m.text}
                   {!m.done && !m.isUser && <span className="thinking-dots">...</span>}

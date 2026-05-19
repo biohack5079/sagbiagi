@@ -31,6 +31,7 @@ cloudflared.deb
 # Goのビルド成果物（signaling内）
 signaling/sagbi-server
 signaling/server
+signaling/history_state.json
 
 # C++ / Windows の実行ファイル・ビルド成果物
 *.exe

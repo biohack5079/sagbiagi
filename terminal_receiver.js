@@ -11,25 +11,49 @@ ws.on('open', () => {
   ws.send(JSON.stringify({ type: 'register', payload: { role: 'terminal' } }));
 });
 
+// メッセージをターミナルに整形して表示するヘルパー
+const displayMessage = (sender, text, isUser, hasImage) => {
+  const color = isUser ? '\x1b[32m' : '\x1b[35m'; // User=緑, AI=紫
+  // [ACTION:...] などのタグを除去
+  const cleanText = text ? text.replace(/\[(?:ACTION:)?([a-z_]+)\]/gi, '').trim() : '';
+  
+  if (cleanText || hasImage) {
+    process.stdout.write(`${color}[${sender}]:\x1b[0m ${cleanText}`);
+    if (hasImage) {
+      process.stdout.write(` \x1b[90m(📷 画像あり)\x1b[0m`);
+    }
+    process.stdout.write('\n');
+  }
+};
+
 ws.on('message', async (data) => {
   try {
     const msg = JSON.parse(data);
+
+    // 1. 接続直後に送られてくる過去の履歴を処理
+    if (msg.type === 'history' && msg.history) {
+      console.log('\x1b[33m%s\x1b[0m', '--- 過去の会話履歴を同期中 ---');
+      msg.history.forEach(item => {
+        const sender = item.isUser ? 'You' : (item.senderName || 'SAGBI AI');
+        displayMessage(sender, item.text, item.isUser, !!item.image);
+      });
+      console.log('\x1b[33m%s\x1b[0m', '--- 同期完了。新しいメッセージを待機中 ---');
+      return;
+    }
     
-    // ユーザーのメッセージ、またはAIの返答が完了(done)した時だけ表示する
+    // 2. リアルタイムメッセージの処理
     const isUser = msg.type === 'chat_message';
     const isAiDone = msg.type === 'chat_response' && msg.payload?.done;
 
-    if ((isUser || isAiDone) && msg.payload?.text) {
+    if ((isUser || isAiDone) && (msg.payload?.text || msg.payload?.image)) {
       const isAi = msg.type === 'chat_response';
       const sender = isAi ? (msg.from || 'sagbiちゃん') : 'You';
-      const color = isAi ? '\x1b[35m' : '\x1b[32m'; // AIは紫、Userは緑
-      
-      // [ACTION:...] などのタグを除去して表示
-      const cleanText = msg.payload.text.replace(/\[(?:ACTION:)?([a-z_]+)\]/gi, '').trim();
-      
-      if (cleanText) {
-        console.log(`${color}[${sender}]:\x1b[0m ${cleanText}`);
-      }
+      displayMessage(
+        sender, 
+        msg.payload.text, 
+        !isAi, 
+        !!msg.payload.image
+      );
     }
   } catch (e) {
     console.error('Error handling message:', e);

@@ -7,6 +7,11 @@ node_modules
 .firebaserc
 README.md
 
+# ログファイルと履歴データの除外
+*.log
+signaling/history_state.json
+signaling/history/
+
 # 2. 実行ファイル（.exe）をプロジェクト全体から除外
 # これにより、どのフォルダに exe があってもデプロイ対象から外れます
 **/*.exe

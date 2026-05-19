@@ -37,12 +37,15 @@ fi
 PORT_CFG=${LISTEN_ADDR:-:8080}
 CHECK_PORT=${PORT_CFG#*:}
 
-# 以前のプロセスが残っていたら掃除する
-if command -v lsof >/dev/null && lsof -Pi :$CHECK_PORT -sTCP:LISTEN -t >/dev/null ; then
-    echo "Port $CHECK_PORT is already in use. Cleaning up old process..."
+# 以前のSAGBI関連プロセスを確実に終了させる
+echo "Cleaning up old SAGBI processes..."
+pkill -f sagbi-server || true
+pkill -f cloudflared || true
+pkill -f terminal_receiver.js || true
+if command -v fuser >/dev/null; then
     fuser -k $CHECK_PORT/tcp >/dev/null 2>&1 || true
-    sleep 1
 fi
+sleep 1
 
 cd signaling
 # go run ではなく build 済みのバイナリを使うことで2回目以降を爆速にする

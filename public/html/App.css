@@ -136,8 +136,11 @@
 }
 .bubble-img {
   max-width: 100%;
+  max-height: 300px;
+  object-fit: contain;
   border-radius: 8px;
   margin: 4px 0;
+  background: rgba(0, 0, 0, 0.2);
 }
 .thinking-dots {
   display: inline-block;

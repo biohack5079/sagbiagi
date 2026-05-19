@@ -27,6 +27,13 @@ var (
 	ragMu        sync.RWMutex
 )
 
+// サーバー側で保持する履歴の永続化用
+var (
+	globalHistory []ChatPayload
+	historyMu     sync.Mutex
+	persistFile   = "history_state.json"
+)
+
 // ── Configuration ────────────────────────────────────────────
 var (
 	listenAddr  = envOr("LISTEN_ADDR", ":8080")
@@ -45,6 +52,29 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// 履歴をファイルに保存
+func saveHistory() {
+	historyMu.Lock()
+	defer historyMu.Unlock()
+	data, _ := json.Marshal(globalHistory)
+	_ = os.WriteFile(persistFile, data, 0644)
+}
+
+// 履歴をファイルから読み込み
+func loadHistory() {
+	historyMu.Lock()
+	defer historyMu.Unlock()
+	data, err := os.ReadFile(persistFile)
+	if err == nil {
+		json.Unmarshal(data, &globalHistory)
+		log.Printf("[Init] Loaded %d messages from history file", len(globalHistory))
+	}
+	// 起動時にディレクトリ設定を反映
+	if historyDir != "" {
+		_ = os.MkdirAll(historyDir, 0755)
+	}
 }
 
 // ── WebSocket upgrader ───────────────────────────────────────
@@ -138,14 +168,17 @@ type WSMessage struct {
 	Type    string          `json:"type"`
 	From    string          `json:"from,omitempty"`
 	Payload json.RawMessage `json:"payload,omitempty"`
+	History []ChatPayload   `json:"history,omitempty"` // 履歴同期用
 }
 
 type ChatPayload struct {
-	Text  string `json:"text"`
-	Image string `json:"image,omitempty"` // Base64 image
-	Lang  string `json:"lang,omitempty"`
-	Done  bool   `json:"done,omitempty"` // 生成完了フラグ
-	ID    string `json:"id,omitempty"`   // メッセージの同一性を識別するためのID
+	Text       string `json:"text"`
+	Image      string `json:"image,omitempty"`
+	Lang       string `json:"lang,omitempty"`
+	Done       bool   `json:"done,omitempty"`
+	ID         string `json:"id,omitempty"`
+	IsUser     bool   `json:"isUser"`     // フロントエンドのMessage型と同期
+	SenderName string `json:"senderName"` // 送信者名
 }
 
 // ── Ollama integration ───────────────────────────────────────
@@ -341,10 +374,47 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 		switch msg.Type {
 		case "register":
 			var p struct {
-				Role string `json:"role"`
+				Role    string        `json:"role"`
+				History []ChatPayload `json:"history,omitempty"`
 			}
 			_ = json.Unmarshal(msg.Payload, &p)
 			c.role = p.Role
+
+			// 1. まずサーバーが持っている最新履歴を接続したクライアントに送る
+			historyMu.Lock()
+			if len(globalHistory) > 0 {
+				histMsg, _ := json.Marshal(WSMessage{Type: "history", History: globalHistory})
+				c.send <- histMsg
+			}
+			historyMu.Unlock()
+
+			// 2. クライアントから送られてきた履歴があれば、サーバー側のものと統合して同期
+			if len(p.History) > 0 {
+				historyMu.Lock()
+				// IDベースで重複排除してマージ
+				existingIDs := make(map[string]bool)
+				for _, m := range globalHistory {
+					if m.ID != "" {
+						existingIDs[m.ID] = true
+					}
+				}
+
+				mergedCount := 0
+				for _, m := range p.History {
+					if m.ID != "" && !existingIDs[m.ID] {
+						globalHistory = append(globalHistory, m)
+						mergedCount++
+					}
+				}
+				historyMu.Unlock()
+				if mergedCount > 0 {
+					saveHistory()
+					syncMsg, _ := json.Marshal(WSMessage{Type: "history", History: globalHistory})
+					hub.broadcast(syncMsg, c)
+					log.Printf("[WS] Merged %d new items from %s", mergedCount, c.id)
+				}
+			}
+
 			// 自分のIDを通知する
 			regMsg, _ := json.Marshal(WSMessage{
 				Type:    "registered",
@@ -371,6 +441,14 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			if p.ID == "" {
 				p.ID = generateID("user")
 			}
+			p.IsUser = true
+			p.SenderName = "You"
+
+			historyMu.Lock()
+			globalHistory = append(globalHistory, p)
+			historyMu.Unlock()
+			saveHistory()
+
 			msg.Payload, _ = json.Marshal(p)
 			broadcastRaw, _ := json.Marshal(msg)
 			hub.broadcast(broadcastRaw, c) // 送信者を除外してブロードキャスト（自分はローカルで描画済みの為）
@@ -434,10 +512,20 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				} else {
 					// 完了通知を送信
 					respMsg.Payload, _ = json.Marshal(ChatPayload{
-						Text: fullAnswer.String(),
-						ID:   aiResponseID,
-						Done: true,
+						Text:       fullAnswer.String(),
+						ID:         aiResponseID,
+						Done:       true,
+						IsUser:     false,
+						SenderName: "SAGBI AI",
 					})
+					// 履歴に追加
+					historyMu.Lock()
+					globalHistory = append(globalHistory, ChatPayload{
+						Text: fullAnswer.String(), ID: aiResponseID, Done: true, IsUser: false, SenderName: "SAGBI AI",
+					})
+					historyMu.Unlock()
+					saveHistory()
+
 					finalBytes, _ := json.Marshal(respMsg)
 					hub.broadcast(finalBytes, nil)
 				}
@@ -479,6 +567,8 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 // ── Main ─────────────────────────────────────────────────────
 func main() {
+	loadHistory()
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/ws/chat", handleWS)

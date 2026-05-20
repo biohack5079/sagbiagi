@@ -438,6 +438,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // メッセージ更新時、またはチャット画面が開かれた時に最新メッセージ（最下部）へスクロール
+    // Scroll to the bottom to show the latest message on update or when the chat screen is opened
     if (isOpen && showChatLog) {
       const timer = setTimeout(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });

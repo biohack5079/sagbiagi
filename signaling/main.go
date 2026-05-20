@@ -44,7 +44,7 @@ var (
 	// RAG_DIR 環境変数を参照。設定されていなければRAG機能はデフォルトで無効。
 	ragSourceDir = envOr("RAG_DIR", "")
 	// HISTORY_DIR 環境変数を参照。設定されていなければ履歴保存は無効。
-	historyDir = envOr("HISTORY_DIR", "")
+	historyDir = envOr("HISTORY_DIR", "../data/history")
 	// SYSTEM_PROMPT_DIR システムプロンプトファイルのディレクトリ
 	systemPromptDir = envOr("SYSTEM_PROMPT_DIR", "../public/html")
 )
@@ -62,6 +62,11 @@ func initDB() {
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		log.Fatalf("[DB Error] Failed to create data directory %s: %v", dataDir, err)
 	}
+	// 画像保存用ディレクトリも作成
+	if err := os.MkdirAll(historyDir, 0755); err != nil {
+		log.Printf("[Warning] Failed to create history directory %s: %v", historyDir, err)
+	}
+
 	dbPath := filepath.Join(dataDir, "sagbi.db")
 
 	var err error
@@ -645,11 +650,26 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 						IsUser:     false,
 						SenderName: "SAGBI AI",
 					})
-					// 履歴に追加
-					historyMu.Lock()
+
 					aiPayload := ChatPayload{
 						Text: fullAnswer.String(), ID: aiResponseID, Done: true, IsUser: false, SenderName: "SAGBI AI",
 					}
+
+					// AIが回答に画像を含めていた場合もファイルとして保存するロジックを追加
+					if aiPayload.Image != "" && filename != "" {
+						imgData := aiPayload.Image
+						if idx := bytes.Index([]byte(imgData), []byte(",")); idx != -1 {
+							imgData = imgData[idx+1:]
+						}
+						if decoded, err := base64.StdEncoding.DecodeString(imgData); err == nil {
+							aiImgFilename := filepath.Join(historyDir, fmt.Sprintf("ai_media_%s_%s.jpg", sessionID, clientID))
+							_ = os.WriteFile(aiImgFilename, decoded, 0644)
+							story.WriteString(fmt.Sprintf("[AI:Sagbi] [IMAGE] attached -> %s\n", aiImgFilename))
+						}
+					}
+
+					// 履歴に追加
+					historyMu.Lock()
 					globalHistory = append(globalHistory, aiPayload)
 					// メモリ保持分を100件に制限
 					if len(globalHistory) > 100 {

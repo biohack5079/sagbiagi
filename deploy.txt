@@ -38,3 +38,6 @@ npm run preview
 
 npm run check
 ./start_sagbi.sh
+
+
+sqlitebrowser data/sagbi.db

@@ -35,4 +35,6 @@ npm install
 npm run build
 npm run preview
 ./build_frontend.sh
+
 npm run check
+./start_sagbi.sh

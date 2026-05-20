@@ -26,32 +26,28 @@ const displayMessage = (sender, text, isUser, hasImage) => {
 
 ws.on('message', async (data) => {
   try {
-    const rawData = data.toString();
-    const msg = JSON.parse(rawData);
+    const msg = JSON.parse(data.toString());
 
     // 1. 接続直後に送られてくる過去の履歴を処理
     if (msg.type === 'history' && msg.history) {
       msg.history.forEach(item => {
-        const sender = item.isUser ? 'You' : (item.senderName || 'SAGBI AI');
-        displayMessage(sender, item.text, item.isUser, !!item.image);
+        displayMessage(item.senderName || (item.isUser ? 'You' : 'SAGBI AI'), item.text, item.isUser, !!item.image);
       });
       return;
     }
     
     // 2. リアルタイムメッセージの処理
-    const isUserMessage = msg.type === 'chat_message';
-    const isAiResponse = msg.type === 'chat_response';
+    const isUserMessage = (msg.type === 'chat_message');
+    const isAiResponse = (msg.type === 'chat_response');
     
     let payload = msg.payload;
-    if (typeof payload === 'string') {
-      try { 
-        if (payload.trim().startsWith('{')) payload = JSON.parse(payload); 
-      } catch (e) {}
+    if (typeof payload === 'string' && payload.trim().startsWith('{')) {
+      try { payload = JSON.parse(payload); } catch (e) {}
     }
 
     const hasContent = payload?.text || payload?.image;
 
-    // AI回答の場合、ストリーミング中の不完全なデータは無視し、確定(done)時のみ表示
+    // AI回答の場合、確定(done)するまでは表示をスキップ（ターミナルの重複防止）
     if (isAiResponse && payload && payload.done === false) return;
 
     if ((isUserMessage || isAiResponse) && hasContent) {

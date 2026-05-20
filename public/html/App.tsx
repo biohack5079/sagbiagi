@@ -35,6 +35,8 @@ const App: React.FC = () => {
   const [isTalking, setIsTalking] = useState(false);
   const [isMicActive, setIsMicActive] = useState(false);
   const [isCamActive, setIsCamActive] = useState(false);
+  const [isChatOverlayActive, setIsChatOverlayActive] = useState(false);
+  const [isOverUI, setIsOverUI] = useState(false); // UI要素の上にマウスがあるか
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showChatLog, setShowChatLog] = useState(true);
@@ -478,6 +480,8 @@ const App: React.FC = () => {
         className="chat-header" 
         onDoubleClick={handleDoubleClick}
         onPointerDown={handleWindowMove}
+        onPointerEnter={() => setIsOverUI(true)}
+        onPointerLeave={() => setIsOverUI(false)}
       >
         <div className="chat-status-area">
           <button 
@@ -509,7 +513,12 @@ const App: React.FC = () => {
         <Suspense fallback={<div style={{color: 'white', position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)'}}>Loading Agent...</div>}>
           <Canvas shadows eventSource={containerRef as any}>
               <PerspectiveCamera makeDefault position={[0, 1.2, 4.0]} fov={45} />
-              <OrbitControls target={[0, 0.9, 0]} enableDamping domElement={containerRef.current || undefined} enabled={!isDragging} />
+              <OrbitControls
+                target={[0, 0.9, 0]}
+                enableDamping
+                // ドラッグ中、またはUI要素（吹き出し等）の上にポインタがある時は3D操作を無効化
+                enabled={!isDragging && !isOverUI}
+              />
               <ambientLight intensity={0.8} />
               <directionalLight position={[1, 2, 1]} intensity={1.2} />
               <gridHelper args={[10, 20, 0x888888, 0x444444]} />
@@ -518,19 +527,19 @@ const App: React.FC = () => {
         </Suspense>
       </div>
 
-      <div className="chat-overlay">
+      <div 
+        className="chat-overlay"
+        onPointerEnter={() => {}} // 以前の coarse な判定は削除
+      >
         <div 
-          className="chat-log" 
+          className="chat-log"
           style={{ display: showChatLog ? 'flex' : 'none' }}
           onWheel={(e) => e.stopPropagation()} 
           onPointerDown={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const x = e.clientX - rect.left;
-            
             // RTL設定時、スクロールバーは左側(0px付近)にある
             const isScrollbarArea = x < 30;
-
-            // 吹き出し(子要素)または左端スクロールバー領域なら、3D操作イベントを止める
             if (e.target !== e.currentTarget || isScrollbarArea) {
               e.stopPropagation();
             }
@@ -540,12 +549,13 @@ const App: React.FC = () => {
             <div key={m.id} className={`message ${m.isUser ? 'user' : 'ai'}`}>
               <div 
                 className="bubble" 
-                // 吹き出し内では全てのボタン（左クリック含む）とホイールをスクロールに捧げる
+                // 吹き出しの上では3D操作を無効にする
+                onPointerEnter={() => setIsOverUI(true)}
+                onPointerLeave={() => setIsOverUI(false)}
                 onPointerDown={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
                 onWheel={(e) => e.stopPropagation()}
                 onTouchStart={(e) => e.stopPropagation()}
-                style={{ pointerEvents: 'auto' }}
               >
                 <div className="sender">{m.senderName}</div>
                 {m.image && (
@@ -565,7 +575,13 @@ const App: React.FC = () => {
           <div ref={chatEndRef} />
         </div>
 
-        <div className="input-area" onPointerDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+        <div 
+          className="input-area" 
+          onPointerDown={e => e.stopPropagation()} 
+          onMouseDown={e => e.stopPropagation()}
+          onPointerEnter={() => setIsOverUI(true)}
+          onPointerLeave={() => setIsOverUI(false)}
+        >
           {/* 下端の移動用ハンドル */}
           <div className="drag-handle-bottom" onPointerDown={handleWindowMove} />
           {previewImage && (

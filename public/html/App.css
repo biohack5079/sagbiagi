@@ -45,7 +45,7 @@
   border-radius: 12px 12px 0 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   overflow: hidden;
-  cursor: default;
+  cursor: grab; /* 移動可能であることを示す */
 }
 .chat-status-area { display: flex; align-items: center; gap: 8px; }
 .chat-status-dot { width: 8px; height: 8px; background: #f44336; border-radius: 50%; }
@@ -69,7 +69,7 @@
   width: 100%;
   height: 100%;
   z-index: 1;
-  pointer-events: auto; /* 3D操作を可能にする */
+  pointer-events: none; /* 3D操作は後述の Fiber eventSource 経由で処理 */
 }
 
 .chat-overlay {
@@ -86,12 +86,16 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 60px 15px 20px; /* ヘッダーを避けるため上部を大幅に確保 */
-  pointer-events: none; /* 背後の3Dモデルを操作できるようにする */
+  padding: 60px 15px 20px 15px;
+  pointer-events: auto;
+  -webkit-overflow-scrolling: touch; /* iOSでのスクロールを滑らかにする */
+  direction: rtl; /* スクロールバーを左側に配置してブラウザ側と重なるのを防ぐ */
 }
 .message {
   display: flex;
-  pointer-events: none; /* 行自体のイベントを無効化 */
+  width: 100%;
+  pointer-events: none;
+  direction: ltr; /* コンテンツのテキスト方向を通常に戻す */
 }
 .media-controls {
   display: flex;
@@ -121,7 +125,8 @@
 
 .message.user { justify-content: flex-end; }
 .bubble {
-  pointer-events: auto; /* 吹き出し部分のみクリックやテキスト選択を有効化 */
+  pointer-events: auto;
+  cursor: text;
   max-width: 85%;
   padding: 10px 14px;
   border-radius: 14px;
@@ -153,6 +158,7 @@
 .sender { font-size: 0.8em; opacity: 0.6; }
 .input-area {
   pointer-events: auto;
+  position: relative;
   padding: 12px;
   background: #2a2a40;
   border-radius: 0 0 12px 12px;
@@ -161,6 +167,16 @@
   width: 100% !important;
   /* リサイズハンドルのつまみ部分(右下)と干渉しないよう右側にパディングを追加 */
   padding: 12px 40px 12px 12px;
+}
+/* 下端の移動用ハンドル */
+.drag-handle-bottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: calc(100% - 30px); /* リサイズハンドルを避ける */
+  height: 10px;
+  cursor: grab;
+  z-index: 101;
 }
 .input-row-flex {
   display: flex;

@@ -1,7 +1,7 @@
 import { WebSocket } from 'ws';
 
 // シグナリングサーバーのURL（Goサーバーのアドレスに合わせてください）
-const SIGNALING_SERVER = 'ws://localhost:8080/ws/chat'; // ブラウザのgetSignalingUrl()と合わせる
+const SIGNALING_SERVER = 'ws://127.0.0.1:8080/ws/chat'; // localhostより127.0.0.1の方が安定する
 
 const ws = new WebSocket(SIGNALING_SERVER);
 
@@ -18,41 +18,49 @@ const displayMessage = (sender, text, isUser, hasImage) => {
   const cleanText = text ? text.replace(/\[(?:ACTION:)?([a-z_]+)\]/gi, '').trim() : '';
   
   if (cleanText || hasImage) {
-    process.stdout.write(`${color}[${sender}]:\x1b[0m ${cleanText}`);
-    if (hasImage) {
-      process.stdout.write(` \x1b[90m(📷 画像あり)\x1b[0m`);
-    }
-    process.stdout.write('\n');
+    let output = `${color}[${sender}]:\x1b[0m ${cleanText}`;
+    if (hasImage) output += ` \x1b[90m(📷 画像あり)\x1b[0m`;
+    console.log(output); // process.stdout.write より確実に出力される console.log を使用
   }
 };
 
 ws.on('message', async (data) => {
   try {
-    const msg = JSON.parse(data);
+    const rawData = data.toString();
+    const msg = JSON.parse(rawData);
 
     // 1. 接続直後に送られてくる過去の履歴を処理
     if (msg.type === 'history' && msg.history) {
-      console.log('\x1b[33m%s\x1b[0m', '--- 過去の会話履歴を同期中 ---');
       msg.history.forEach(item => {
         const sender = item.isUser ? 'You' : (item.senderName || 'SAGBI AI');
         displayMessage(sender, item.text, item.isUser, !!item.image);
       });
-      console.log('\x1b[33m%s\x1b[0m', '--- 同期完了。新しいメッセージを待機中 ---');
       return;
     }
     
     // 2. リアルタイムメッセージの処理
-    const isUser = msg.type === 'chat_message';
-    const isAiDone = msg.type === 'chat_response' && msg.payload?.done;
+    const isUserMessage = msg.type === 'chat_message';
+    const isAiResponse = msg.type === 'chat_response';
+    
+    let payload = msg.payload;
+    if (typeof payload === 'string') {
+      try { 
+        if (payload.trim().startsWith('{')) payload = JSON.parse(payload); 
+      } catch (e) {}
+    }
 
-    if ((isUser || isAiDone) && (msg.payload?.text || msg.payload?.image)) {
-      const isAi = msg.type === 'chat_response';
-      const sender = isAi ? (msg.from || 'sagbiちゃん') : 'You';
+    const hasContent = payload?.text || payload?.image;
+
+    // AI回答の場合、ストリーミング中の不完全なデータは無視し、確定(done)時のみ表示
+    if (isAiResponse && payload && payload.done === false) return;
+
+    if ((isUserMessage || isAiResponse) && hasContent) {
+      const sender = isAiResponse ? (msg.from || payload.senderName || 'SAGBI AI') : 'You';
       displayMessage(
         sender, 
-        msg.payload.text, 
-        !isAi, 
-        !!msg.payload.image
+        payload.text, 
+        isUserMessage, // isUserMessageがtrueならユーザー、falseならAI
+        !!payload.image
       );
     }
   } catch (e) {

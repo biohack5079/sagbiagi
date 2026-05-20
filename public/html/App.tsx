@@ -36,6 +36,7 @@ const App: React.FC = () => {
   const [isMicActive, setIsMicActive] = useState(false);
   const [isCamActive, setIsCamActive] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [showChatLog, setShowChatLog] = useState(true);
   const [currentGesture, setCurrentGesture] = useState('reset');
   const triggeredActions = useRef<Set<string>>(new Set());
@@ -149,36 +150,56 @@ const App: React.FC = () => {
     setIsMaximized(!isMaximized);
   };
 
-  // フレーム全体でのマウスドラッグ移動
-  const handleMouseDown = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-
-    // 1. インタラクティブな要素は除外
-    if (target.closest('button') || target.closest('input') || target.closest('textarea') ||
-      target.closest('.media-controls') || target.tagName === 'CANVAS' || target.closest('.bubble')) {
-      return;
-    }
-
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (rect) {
-      // 右下の角（リサイズハンドル付近 50px）をより厳密に判定
-      const isNearEdgeX = e.clientX > rect.right - 50;
-      const isNearEdgeY = e.clientY > rect.bottom - 50;
-      if (isNearEdgeX && isNearEdgeY) return;
-    }
-    
+  // AppContainerのonPointerDownハンドラ (リサイズ検知用)
+  const handleAppContainerPointerDown = (e: React.PointerEvent) => {
     const container = containerRef.current;
     if (!container) return;
 
-    e.preventDefault();
-    let pos3 = e.clientX;
-    let pos4 = e.clientY;
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const pos1 = pos3 - moveEvent.clientX;
-      const pos2 = pos4 - moveEvent.clientY;
-      pos3 = moveEvent.clientX;
-      pos4 = moveEvent.clientY;
+    // 右下30px x 30px の領域をリサイズハンドルと見なす
+    const isResizeHandleArea = x > rect.width - 30 && y > rect.height - 30;
+
+    if (isResizeHandleArea) {
+      setIsDragging(true);
+      const onPointerUp = () => {
+        setIsDragging(false);
+        window.removeEventListener('pointerup', onPointerUp);
+      };
+      window.addEventListener('pointerup', onPointerUp);
+    }
+  };
+
+  // ウィンドウ全体のドラッグ移動処理（ヘッダーと下端ハンドルで使用）
+  const handleWindowMove = (e: React.PointerEvent) => {
+    // ボタンなどの操作時は無視
+    if ((e.target as HTMLElement).closest('button')) return;
+
+    // 3D操作(OrbitControls)への伝播を止める
+    e.stopPropagation();
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    setIsDragging(true);
+    const { clientX, clientY } = e;
+
+    // 移動中はグラブアイコンに変更
+    container.style.cursor = 'grabbing';
+
+    let pos3 = clientX;
+    let pos4 = clientY;
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const currentX = moveEvent.clientX;
+      const currentY = moveEvent.clientY;
+      
+      const pos1 = pos3 - currentX;
+      const pos2 = pos4 - currentY;
+      pos3 = currentX;
+      pos4 = currentY;
 
       container.style.top = (container.offsetTop - pos2) + "px";
       container.style.left = (container.offsetLeft - pos1) + "px";
@@ -186,13 +207,15 @@ const App: React.FC = () => {
       container.style.right = 'auto';
     };
 
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
+    const onEnd = () => {
+      container.style.cursor = '';
+      setIsDragging(false);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onEnd);
     };
 
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onEnd);
   };
 
   // マイク制御 (SpeechRecognition)
@@ -449,9 +472,13 @@ const App: React.FC = () => {
       ref={containerRef} 
       className={`app-container ${isCollapsed ? 'collapsed' : ''} ${isMaximized ? 'maximized' : ''}`} 
       style={{ display: isOpen ? 'flex' : 'none' }}
-      onMouseDown={handleMouseDown}
+      onPointerDown={handleAppContainerPointerDown}
     >
-      <div className="chat-header" onDoubleClick={handleDoubleClick}>
+      <div 
+        className="chat-header" 
+        onDoubleClick={handleDoubleClick}
+        onPointerDown={handleWindowMove}
+      >
         <div className="chat-status-area">
           <button 
             className="chat-btn" 
@@ -480,9 +507,9 @@ const App: React.FC = () => {
       <div className="canvas-wrapper">
         {/* SuspenseをCanvasの外に出し、Loading表示を追加 */}
         <Suspense fallback={<div style={{color: 'white', position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)'}}>Loading Agent...</div>}>
-          <Canvas shadows>
+          <Canvas shadows eventSource={containerRef as any}>
               <PerspectiveCamera makeDefault position={[0, 1.2, 4.0]} fov={45} />
-              <OrbitControls target={[0, 0.9, 0]} enableDamping />
+              <OrbitControls target={[0, 0.9, 0]} enableDamping domElement={containerRef.current || undefined} enabled={!isDragging} />
               <ambientLight intensity={0.8} />
               <directionalLight position={[1, 2, 1]} intensity={1.2} />
               <gridHelper args={[10, 20, 0x888888, 0x444444]} />
@@ -492,10 +519,34 @@ const App: React.FC = () => {
       </div>
 
       <div className="chat-overlay">
-        <div className="chat-log" style={{ display: showChatLog ? 'flex' : 'none' }}>
+        <div 
+          className="chat-log" 
+          style={{ display: showChatLog ? 'flex' : 'none' }}
+          onWheel={(e) => e.stopPropagation()} 
+          onPointerDown={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            
+            // RTL設定時、スクロールバーは左側(0px付近)にある
+            const isScrollbarArea = x < 30;
+
+            // 吹き出し(子要素)または左端スクロールバー領域なら、3D操作イベントを止める
+            if (e.target !== e.currentTarget || isScrollbarArea) {
+              e.stopPropagation();
+            }
+          }}
+        >
           {messages.map((m) => (
             <div key={m.id} className={`message ${m.isUser ? 'user' : 'ai'}`}>
-              <div className="bubble">
+              <div 
+                className="bubble" 
+                // 吹き出し内では全てのボタン（左クリック含む）とホイールをスクロールに捧げる
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onWheel={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                style={{ pointerEvents: 'auto' }}
+              >
                 <div className="sender">{m.senderName}</div>
                 {m.image && (
                   <img 
@@ -514,7 +565,9 @@ const App: React.FC = () => {
           <div ref={chatEndRef} />
         </div>
 
-        <div className="input-area">
+        <div className="input-area" onPointerDown={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+          {/* 下端の移動用ハンドル */}
+          <div className="drag-handle-bottom" onPointerDown={handleWindowMove} />
           {previewImage && (
             <div className="image-preview-container">
               <img src={previewImage} alt="preview" />

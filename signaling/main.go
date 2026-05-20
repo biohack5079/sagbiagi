@@ -237,7 +237,7 @@ type ChatPayload struct {
 	Text       string `json:"text"`
 	Image      string `json:"image,omitempty"`
 	Lang       string `json:"lang,omitempty"`
-	Done       bool   `json:"done,omitempty"`
+	Done       bool   `json:"done"` // omitemptyを削除し、常に状態を明示する
 	ID         string `json:"id,omitempty"`
 	IsUser     bool   `json:"isUser"`     // フロントエンドのMessage型と同期
 	SenderName string `json:"senderName"` // 送信者名
@@ -563,7 +563,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			if p.ID == "" {
 				p.ID = generateID("user")
 			}
-			p.IsUser = true
+			p.IsUser = true // ユーザーメッセージ
 			p.SenderName = "You"
 
 			historyMu.Lock()
@@ -620,9 +620,10 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 					fullAnswer.WriteString(chunk)
 					// 逐次ブロードキャスト
 					respMsg.Payload, _ = json.Marshal(ChatPayload{
-						Text: fullAnswer.String(), // 累積した文字列を送信することで細切れを解消
-						ID:   aiResponseID,
-						Done: false,
+						Text:   fullAnswer.String(), // 累積した文字列を送信することで細切れを解消
+						ID:     aiResponseID,
+						Done:   false,
+						IsUser: false,
 					})
 					respBytes, _ := json.Marshal(respMsg)
 					hub.broadcast(respBytes, nil)

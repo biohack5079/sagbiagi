@@ -465,10 +465,10 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 	defer hub.unregister(c)
 
 	// Keep connection alive with Pong handler
-	conn.SetReadLimit(10 * 1024 * 1024)                      // 10MB limit for base64 images
-	conn.SetReadDeadline(time.Now().Add(3000 * time.Second)) // 5分まで許容
+	conn.SetReadLimit(10 * 1024 * 1024)                    // 10MB limit for base64 images
+	conn.SetReadDeadline(time.Now().Add(90 * time.Second)) // 90秒以内に反応がなければ切断
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(3000 * time.Second))
+		conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 		return nil
 	})
 

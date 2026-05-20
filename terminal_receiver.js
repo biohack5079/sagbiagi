@@ -3,13 +3,27 @@ import { WebSocket } from 'ws';
 // シグナリングサーバーのURL（Goサーバーのアドレスに合わせてください）
 const SIGNALING_SERVER = 'ws://127.0.0.1:8080/ws/chat'; // localhostより127.0.0.1の方が安定する
 
-const ws = new WebSocket(SIGNALING_SERVER);
+function connect() {
+  const ws = new WebSocket(SIGNALING_SERVER);
+  let pingTimeout;
 
-ws.on('open', () => {
-  console.log('\x1b[36m%s\x1b[0m', '--- Terminal Chat Monitor Connected ---');
-  // ターミナル用クライアントとして登録
-  ws.send(JSON.stringify({ type: 'register', payload: { role: 'terminal' } }));
-});
+  function heartbeat() {
+    clearTimeout(pingTimeout);
+    // サーバーからのPingが途絶えて40秒経過したら「死んでいる」とみなして切断
+    pingTimeout = setTimeout(() => {
+      console.warn('\x1b[33m%s\x1b[0m', '[Warning] Heartbeat timeout. Reconnecting...');
+      ws.terminate();
+    }, 40000);
+  }
+
+  ws.on('open', () => {
+    console.log('\x1b[36m%s\x1b[0m', '--- Terminal Chat Monitor Connected ---');
+    heartbeat();
+    // ターミナル用クライアントとして登録
+    ws.send(JSON.stringify({ type: 'register', payload: { role: 'terminal' } }));
+  });
+
+  ws.on('ping', heartbeat);
 
 // メッセージをターミナルに整形して表示するヘルパー
 const displayMessage = (sender, text, isUser, hasImage) => {
@@ -26,6 +40,7 @@ const displayMessage = (sender, text, isUser, hasImage) => {
 
 ws.on('message', async (data) => {
   try {
+    heartbeat();
     const msg = JSON.parse(data.toString());
 
     // 1. 接続直後に送られてくる過去の履歴を処理
@@ -64,4 +79,16 @@ ws.on('message', async (data) => {
   }
 });
 
+  ws.on('close', () => {
+    clearTimeout(pingTimeout);
+    console.log('\x1b[31m%s\x1b[0m', '[System] Connection lost. Retrying in 3s...');
+    setTimeout(connect, 3000);
+  });
+
+  ws.on('error', (err) => {
+    console.error('[Error] WebSocket error:', err.message);
+  });
+}
+
+connect();
 console.log('Terminal Monitor started. Monitoring messages via WebSocket...');

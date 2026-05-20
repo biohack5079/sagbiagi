@@ -338,10 +338,21 @@ const App: React.FC = () => {
     const url = getSignalingUrl();
     const socket = new WebSocket(url);
     socketRef.current = socket;
+    let pingTimeout: any;
+
+    const heartbeat = () => {
+      clearTimeout(pingTimeout);
+      pingTimeout = setTimeout(() => {
+        console.warn("[WebSocket] Heartbeat timeout. Closing...");
+        socket.close();
+      }, 45000); // サーバーのPing送信間隔(30s)より少し長く設定
+    };
+
     setSocketStatus(WebSocket.CONNECTING);
 
     socket.onopen = () => {
       console.log("[WebSocket] Connection established. Registering...");
+      heartbeat();
       // 接続時にローカルの履歴をサーバーに送り、同期を図る
       socket.send(JSON.stringify({ 
         type: 'register', 
@@ -352,6 +363,7 @@ const App: React.FC = () => {
     };
 
     socket.onmessage = (event) => {
+      heartbeat();
       const data = JSON.parse(event.data);
       console.log("[WebSocket] Received:", data); // デバッグ用ログを追加
       const { type, payload, from, history } = data;
@@ -406,6 +418,7 @@ const App: React.FC = () => {
     };
 
     socket.onclose = () => {
+      clearTimeout(pingTimeout);
       console.warn("[WebSocket] Disconnected. Reconnecting in 2s...");
       setSocketStatus(WebSocket.CLOSED);
       // PCの休止復帰時などを考慮し、早めに再接続を試みる
@@ -424,9 +437,14 @@ const App: React.FC = () => {
   }, [connectWebSocket]);
 
   useEffect(() => {
-    // メッセージ更新時に即座に最下部へスクロールさせ、最新の吹き出しが隠れないようにします
-    chatEndRef.current?.scrollIntoView({ behavior: 'auto' });
-  }, [messages]);
+    // メッセージ更新時、またはチャット画面が開かれた時に最新メッセージ（最下部）へスクロール
+    if (isOpen && showChatLog) {
+      const timer = setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [messages, isOpen, showChatLog]);
 
   const sendMessage = (text: string) => {
     if (!text.trim() && !previewImage) return;

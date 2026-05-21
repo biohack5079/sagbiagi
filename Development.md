@@ -98,30 +98,30 @@ log "Model ${MODEL} ready"
 # 3.5 RAG Directory Configuration
 # -------------------
 echo "-------------------------------------------------------"
-echo "RAGソース参照ファイルを保存するフォルダのフルパスを入力してください。"
-echo "（未入力の場合はRAG機能がデフォルトで無効になります）"
+echo "Please enter the full path to the folder where RAG source files are stored."
+echo "(If left blank, RAG functionality will be disabled by default)"
 read -p "Path: " RAG_PATH
 
 if [ -z "$RAG_PATH" ]; then
-    log "RAG設定をスキップしました。"
+    log "Skipped RAG configuration."
 else
-    echo "警告: ここが以降の参照フォルダになります。個人情報などは保存しないで下さい。"
+    echo "Warning: This will be the reference folder from now on. Do not store personal information."
     mkdir -p "signaling"
     echo "RAG_DIR=$RAG_PATH" > signaling/.env
-    log "RAGディレクトリを $RAG_PATH に設定し、signaling/.env に保存しました。"
+    log "Set RAG directory to $RAG_PATH and saved to signaling/.env."
 fi
 
 echo "-------------------------------------------------------"
-echo "会話履歴（ログ）を保存するフォルダのフルパスを入力してください。"
-echo "（GitHub管理外のディレクトリを推奨します。未入力なら保存しません）"
+echo "Please enter the full path to the folder where conversation history (logs) will be saved."
+echo "(Recommended to use a directory outside of GitHub management. If blank, logs won't be saved)"
 read -p "History Path: " HIST_PATH
 
 if [ -z "$HIST_PATH" ]; then
-    log "履歴保存を無効にしました。"
+    log "Disabled history saving."
 else
     mkdir -p "$HIST_PATH"
     echo "HISTORY_DIR=$HIST_PATH" >> signaling/.env
-    log "履歴保存先を $HIST_PATH に設定しました。"
+    log "Set history save path to $HIST_PATH."
 fi
 
 # -------------------
@@ -203,7 +203,7 @@ spec:
         lifecycle:
           postStart:
             exec:
-              # コンテナ起動時にモデルが存在しない場合は自動的にプルする
+              # Automatically pull the model if missing on startup
               command: ["/bin/sh", "-c", "sleep 5 && ollama pull gemma3:4b-it-q4_K_M"]
         securityContext:
           runAsUser: 1000
@@ -389,6 +389,36 @@ sqlite> SELECT sender_name, text FROM messages;
    - Update `public/html/index.html` links to point at the appropriate asset (already done for Windows, add similar Linux link).
 2. **Documentation**
    - Add a short “Installation” section to the README linking to this **Development.md** for power‑users.
+
+---
+### 7️⃣ Automated Testing
+To maintain project quality and ensure the normal operation of agent gestures (twirl, smile, etc.) and RAG logic, the following test suites are provided. Full details are also available in [TESTING.md](./TESTING.md).
+
+#### 7.1 Frontend Unit Testing (Vitest)
+Verifies message parsing and automatic gesture trigger logic based on specific keywords.
+- **Test File:** `public/html/App.test.tsx`
+```bash
+# Run tests
+npm test
+```
+
+#### 7.2 Backend Unit Testing (Go)
+Verifies ID generation, SQLite message storage, and RAG search logic.
+- **Test File:** `signaling/main_test.go`
+```bash
+cd signaling
+go test -v .
+```
+
+#### 7.3 E2Eテスト (Playwright)
+ブラウザを実際に起動し、ユーザー入力からAIの応答、3Dモデルのアニメーションまでのフローを統合的に検証します。
+- **テストファイル:** `e2e/chat.spec.ts`
+```bash
+# ブラウザのインストール (初回のみ)
+npx playwright install
+# テストの実行 (ViteとGoサーバーが起動している必要があります)
+npx playwright test
+```
 
 ---
 ## 🎉 Done!

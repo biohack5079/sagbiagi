@@ -23,6 +23,16 @@ const getSignalingUrl = () => {
   }
 };
 
+// 自動ジェスチャーのキーワード設定
+const AUTO_GESTURE_RULES = [
+  { regex: /踊|ダンス/, action: 'dance' },
+  { regex: /回転|まわって|くるくる|twirl/, action: 'twirl' },
+  { regex: /すごい|やった|うれしい/, action: 'joy' },
+  { regex: /笑|わら|ニコニコ|かわいい/, action: 'smile' },
+  { regex: /こんにちは|ハロー|hello|hi/, action: 'wave' },
+  { regex: /はい|そうですね|了解/, action: 'nod' },
+];
+
 const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = localStorage.getItem('sagbi_history');
@@ -91,10 +101,8 @@ const App: React.FC = () => {
   const triggerAutoGesture = useCallback((text: string) => {
     const normalized = text.toLowerCase();
     let action: string | null = null;
-    if (/こんにちは|ハロー|hello|hi/.test(normalized)) action = 'wave';
-    else if (/はい|そうですね|了解/.test(normalized)) action = 'nod';
-    else if (/すごい|やった|うれしい/.test(normalized)) action = 'joy';
-    else if (/踊|ダンス/.test(normalized)) action = 'dance';
+    const match = AUTO_GESTURE_RULES.find(rule => rule.regex.test(normalized));
+    if (match) action = match.action;
 
     if (action) {
       setCurrentGesture(action);
@@ -378,7 +386,15 @@ const App: React.FC = () => {
           image: h.image,
           done: h.done
         }));
-        setMessages(formatted);
+
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const newOnes = formatted.filter((m: Message) => !existingIds.has(m.id));
+          if (newOnes.length === 0) return prev;
+          
+          // 既存のものと合体させ、直近100件を保持
+          return [...prev, ...newOnes].slice(-100);
+        });
       } else if (type === 'chat_response' || type === 'chat_message') {
         const isAi = type === 'chat_response';
         const msgId = payload.id || (isAi ? 'ai-current' : 'user-current');
@@ -553,7 +569,8 @@ const App: React.FC = () => {
         <div 
           className="chat-log"
           style={{ display: showChatLog ? 'flex' : 'none' }}
-          onWheel={(e) => e.stopPropagation()} 
+          data-testid="chat-log" // テスト用にdata-testidを追加
+          onWheel={(e) => e.stopPropagation()}
           onPointerDown={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const x = e.clientX - rect.left;

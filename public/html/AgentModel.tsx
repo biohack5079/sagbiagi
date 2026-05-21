@@ -246,6 +246,14 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
         if (h) h.rotation.set(0.2, 0.4, 0.2);
         if (r) r.rotation.set(-1.0, 0, 0.5);
         groupRef.current.rotation.y += Math.sin(t * 5) * 0.05;
+      } else if (g?.action === 'twirl') {
+        groupRef.current.rotation.y += t * 8; // 高速回転
+        groupRef.current.position.y += Math.abs(Math.sin(t * 10)) * 0.1;
+      } else if (g?.action === 'smile') {
+        const head = findBone('Head');
+        if (head) {
+          head.rotation.z = Math.sin(t * 3) * 0.1;
+        }
       } else {
         // アクションがない時の微細な揺れ
         groupRef.current.position.y += Math.sin(t * 1.5) * 0.01;
@@ -261,6 +269,30 @@ export const AgentModel: React.FC<Props> = ({ isTalking, currentGesture, modelPa
                       mesh.morphTargetDictionary['mouthOpen'];
         if (index !== undefined) {
           mesh.morphTargetInfluences[index] = isTalking ? (Math.sin(t * 15) + 1) * 0.5 : 0;
+        }
+
+        // 表情（喜・笑顔）の制御
+        const joyIndex = mesh.morphTargetDictionary['Joy'] || 
+                         mesh.morphTargetDictionary['Fcl_JOY_Joy'] || 
+                         mesh.morphTargetDictionary['Fun'];
+        if (joyIndex !== undefined) {
+          // joy, dance, jump, twirl, smile の時に表情を明るくする
+          const isHappy = g?.action === 'joy' || g?.action === 'dance' || 
+                          g?.action === 'jump' || g?.action === 'twirl' || 
+                          g?.action === 'smile' || currentGesture === 'joy';
+          
+          const targetValue = isHappy ? 0.8 : 0;
+          // 徐々に表情を変化させる
+          mesh.morphTargetInfluences[joyIndex] = THREE.MathUtils.lerp(mesh.morphTargetInfluences[joyIndex], targetValue, 0.1);
+        }
+
+        // 驚きの表情の制御
+        const surpriseIndex = mesh.morphTargetDictionary['Surprise'] || 
+                              mesh.morphTargetDictionary['Fcl_SUR_Surprise'];
+        if (surpriseIndex !== undefined) {
+          const isSurprised = g?.action === 'surprised' || currentGesture === 'surprised';
+          const targetValue = isSurprised ? 1.0 : 0;
+          mesh.morphTargetInfluences[surpriseIndex] = THREE.MathUtils.lerp(mesh.morphTargetInfluences[surpriseIndex], targetValue, 0.2);
         }
       }
     });

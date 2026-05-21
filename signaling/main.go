@@ -57,7 +57,7 @@ func envOr(key, fallback string) string {
 }
 
 // データベースの初期化
-func initDB() {
+func initDB(dbPath string) {
 	dataDir := "../data"
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		log.Fatalf("[DB Error] Failed to create data directory %s: %v", dataDir, err)
@@ -66,8 +66,6 @@ func initDB() {
 	if err := os.MkdirAll(historyDir, 0755); err != nil {
 		log.Printf("[Warning] Failed to create history directory %s: %v", historyDir, err)
 	}
-
-	dbPath := filepath.Join(dataDir, "sagbi.db")
 
 	var err error
 	db, err = sql.Open("sqlite", dbPath)
@@ -103,9 +101,6 @@ func initDB() {
 
 // メッセージをDBに保存
 func saveToDB(p ChatPayload) {
-	historyMu.Lock()
-	defer historyMu.Unlock()
-
 	_, err := db.Exec(
 		"INSERT OR REPLACE INTO messages (id, text, image, is_user, sender_name) VALUES (?, ?, ?, ?, ?)",
 		p.ID, p.Text, p.Image, p.IsUser, p.SenderName,
@@ -123,9 +118,6 @@ func saveToDB(p ChatPayload) {
 
 // 履歴をDBから読み込み
 func loadHistory() {
-	historyMu.Lock()
-	defer historyMu.Unlock()
-
 	// 直近100件の履歴のみをメモリに展開する（表示用）
 	rows, err := db.Query("SELECT id, text, image, is_user, sender_name FROM (SELECT * FROM messages ORDER BY created_at DESC LIMIT 100) ORDER BY created_at ASC")
 	if err != nil {
@@ -174,7 +166,6 @@ func (h *Hub) register(c *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.clients[c] = true
-	log.Printf("[Hub] Client registered: %s (role=%s)  total=%d", c.id, c.role, len(h.clients))
 }
 
 func (h *Hub) unregister(c *Client) {
@@ -217,17 +208,20 @@ func (c *Client) writePump() {
 func (h *Hub) broadcast(msg []byte, exclude *Client) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
+	targetCount := 0
 	for c := range h.clients {
 		if c == exclude {
 			continue
 		}
 		select {
 		case c.send <- msg:
+			targetCount++
 		default:
 			log.Printf("[Hub] Warning: Dropping message for slow client %s", c.id)
 			// drop slow client
 		}
 	}
+	// log.Printf("[Hub] Broadcasted message to %d clients", targetCount)
 }
 
 // ── Message types ────────────────────────────────────────────
@@ -502,6 +496,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			}
 			_ = json.Unmarshal(msg.Payload, &p)
 			c.role = p.Role
+			log.Printf("[WS] Client %s registered with role: %s", c.id, c.role)
 
 			// 1. まずサーバーが持っている最新履歴を接続したクライアントに送る
 			historyMu.Lock()
@@ -531,6 +526,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 							globalHistory = globalHistory[1:]
 						}
 						saveToDB(m)
+						log.Printf("[WS] Synced message from client history: %s", m.ID)
 						mergedCount++
 					}
 				}
@@ -560,16 +556,19 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			if err := json.Unmarshal(msg.Payload, &p); err != nil {
 				continue
 			}
-			log.Printf("[Chat] %s: %s (image: %v)", c.id, p.Text, p.Image != "")
 
-			// 質問の同期：ユーザーの質問をそのまま chat_message 型として他者に転送する。
-			msg.From = fmt.Sprintf("User (%s)", c.id)
+			// 送信者の情報を付与してブロードキャスト
+			msg.From = "User"
 			// IDが空の場合のみ新規発行
 			if p.ID == "" {
 				p.ID = generateID("user")
 			}
 			p.IsUser = true // ユーザーメッセージ
-			p.SenderName = "You"
+			if p.SenderName == "" {
+				p.SenderName = "You"
+			}
+
+			log.Printf("[Chat] From %s: %s", c.id, p.Text)
 
 			historyMu.Lock()
 			globalHistory = append(globalHistory, p)
@@ -724,7 +723,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 // ── Main ─────────────────────────────────────────────────────
 func main() {
-	initDB()
+	initDB(filepath.Join("../data", "sagbi.db"))
 	loadHistory()
 
 	mux := http.NewServeMux()

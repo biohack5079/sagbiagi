@@ -39,7 +39,10 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
   const [socketStatus, setSocketStatus] = useState<number>(WebSocket.CLOSED);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(() => {
+    // URLに ?app=1 があれば最初から開く
+    return new URLSearchParams(window.location.search).get('app') === '1';
+  });
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isTalking, setIsTalking] = useState(false);
@@ -61,6 +64,19 @@ const App: React.FC = () => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
   const messagesRef = useRef<Message[]>([]);
+
+  // スタンドアロンモード（Cloudflare遷移時）の最適化
+  useEffect(() => {
+    const isStandalone = new URLSearchParams(window.location.search).get('app') === '1';
+    if (isStandalone) {
+      // 背後の重いHTML要素を削除してボトルネックを排除
+      const wrapper = document.getElementById('wrapper');
+      if (wrapper) wrapper.style.display = 'none';
+      document.body.style.backgroundColor = '#1e1e2f';
+      // デフォルトで最大化に近いサイズにする
+      setIsMaximized(true);
+    }
+  }, []);
 
   // 履歴が変わるたびに保存
   useEffect(() => {

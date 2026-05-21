@@ -352,10 +352,10 @@ To ensure everything is running correctly in Kubernetes, use these commands:
 
 ---
 ### 5️⃣ Migration / Manual Setup
-別環境への移行や、新規環境での手動構築時には以下の手順で依存関係とデータディレクトリを準備してください。
+When migrating to another environment or setting up manually in a new environment, follow these steps to prepare dependencies and the data directory.
 
-#### 5.1 Go 依存関係の初期化 (SQLite)
-シグナリングサーバーで使用する Pure Go 実装の SQLite ドライバーをインストールします。
+#### 5.1 Initialize Go Dependencies (SQLite)
+Install the pure Go SQLite driver used by the signaling server.
 ```bash
 cd signaling
 go get modernc.org/sqlite

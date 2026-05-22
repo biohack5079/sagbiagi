@@ -1053,7 +1053,8 @@ document.addEventListener('DOMContentLoaded', () => {
         deleteKeyBtn.addEventListener('click', () => {
             if (confirm(isEn ? 'Delete saved Gemini API Key?' : '保存されたGemini APIキーを削除しますか？')) {
                 localStorage.removeItem('plowerGeminiApiKey');
-                document.getElementById('geminiApiKey').value = '';
+                const keyInput = document.getElementById('geminiApiKey');
+                if (keyInput) keyInput.value = '';
                 alert(isEn ? 'Gemini API Key deleted.' : '保存されたGemini APIキーを削除しました。');
             }
         });
@@ -1082,7 +1083,8 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteHfTokenBtn.addEventListener('click', () => {
                 if (confirm(isEn ? 'Delete saved HuggingFace Token?' : '保存されたHuggingFaceトークンを削除しますか？')) {
                     localStorage.removeItem('plowerHfToken');
-                    document.getElementById('hfToken').value = '';
+                    const tokenInput = document.getElementById('hfToken');
+                    if (tokenInput) tokenInput.value = '';
                     alert(isEn ? 'HuggingFace Token deleted.' : '保存されたHuggingFaceトークンを削除しました。');
                 }
             });

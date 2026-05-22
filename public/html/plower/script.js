@@ -1048,16 +1048,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 削除ボタンを動的に追加
-    const deleteKeyBtn = document.createElement('button');
-    deleteKeyBtn.textContent = isEn ? 'Delete Key' : 'キー削除';
-    deleteKeyBtn.style.marginLeft = '5px';
-    deleteKeyBtn.addEventListener('click', () => {
-        localStorage.removeItem('plowerGeminiApiKey');
-        document.getElementById('geminiApiKey').value = '';
-        alert(isEn ? 'Gemini API Key deleted.' : '保存されたGemini APIキーを削除しました。');
-    });
-    saveKeyBtn.parentNode.insertBefore(deleteKeyBtn, saveKeyBtn.nextSibling);
+    const deleteKeyBtn = document.getElementById('deleteKeyButton');
+    if (deleteKeyBtn) {
+        deleteKeyBtn.addEventListener('click', () => {
+            if (confirm(isEn ? 'Delete saved Gemini API Key?' : '保存されたGemini APIキーを削除しますか？')) {
+                localStorage.removeItem('plowerGeminiApiKey');
+                document.getElementById('geminiApiKey').value = '';
+                alert(isEn ? 'Gemini API Key deleted.' : '保存されたGemini APIキーを削除しました。');
+            }
+        });
+    }
     
     // --- Hugging Face Access Token のロードと保存処理 ---
     const savedHfToken = localStorage.getItem('plowerHfToken');
@@ -1077,28 +1077,32 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // トークン削除ボタンの追加
-        const deleteHfTokenBtn = document.createElement('button');
-        deleteHfTokenBtn.textContent = isEn ? 'Delete Token' : 'トークン削除';
-        deleteHfTokenBtn.style.marginLeft = '5px';
-        deleteHfTokenBtn.addEventListener('click', () => {
-            localStorage.removeItem('plowerHfToken');
-            document.getElementById('hfToken').value = '';
-            alert(isEn ? 'HuggingFace Token deleted.' : '保存されたHuggingFaceトークンを削除しました。');
-        });
-        saveHfTokenBtn.parentNode.insertBefore(deleteHfTokenBtn, saveHfTokenBtn.nextSibling);
+        const deleteHfTokenBtn = document.getElementById('deleteHfTokenButton');
+        if (deleteHfTokenBtn) {
+            deleteHfTokenBtn.addEventListener('click', () => {
+                if (confirm(isEn ? 'Delete saved HuggingFace Token?' : '保存されたHuggingFaceトークンを削除しますか？')) {
+                    localStorage.removeItem('plowerHfToken');
+                    document.getElementById('hfToken').value = '';
+                    alert(isEn ? 'HuggingFace Token deleted.' : '保存されたHuggingFaceトークンを削除しました。');
+                }
+            });
+        }
     }
 
     // --- HuggingFace URL設定の初期化とイベントリスナー ---
     const hfUrlInput = document.getElementById('hfUrlInput');
     if (hfUrlInput) {
-        hfUrlInput.value = localStorage.getItem('plowerHfUrl') || 'http://localhost:11434';
+        hfUrlInput.value = localStorage.getItem('plowerHfUrl') || '';
     }
 
     const saveHfUrlBtn = document.getElementById('saveHfUrlButton');
     saveHfUrlBtn.addEventListener('click', () => {
         let url = hfUrlInput.value.trim();
-        if (!url) url = 'http://localhost:11434';
+        if (!url) {
+            localStorage.removeItem('plowerHfUrl');
+            alert(isEn ? 'URL setting cleared (returning to default).' : 'URL設定を削除しました（デフォルト設定が使用されます）。');
+            return;
+        }
         let finalMessage = isEn ? 'HuggingFace URL saved.' : 'HuggingFaceのURL設定を保存しました。';
         
         // Hugging Face SpacesのWeb URLが入力された場合、Direct URLに自動変換する
@@ -1116,16 +1120,16 @@ document.addEventListener('DOMContentLoaded', () => {
         alert(finalMessage);
     });
 
-    // HuggingFace URL削除ボタンを動的に追加
-    const deleteHfUrlBtn = document.createElement('button');
-    deleteHfUrlBtn.textContent = isEn ? 'Delete URL' : 'URL削除';
-    deleteHfUrlBtn.style.marginLeft = '5px';
-    deleteHfUrlBtn.addEventListener('click', () => {
-        localStorage.removeItem('plowerHfUrl');
-        if (hfUrlInput) hfUrlInput.value = 'http://localhost:11434';
-        alert(isEn ? 'Saved URL deleted (Reset to default).' : '保存されたURL設定を削除しました（デフォルトのlocalhostに戻りました）。');
-    });
-    saveHfUrlBtn.parentNode.insertBefore(deleteHfUrlBtn, saveHfUrlBtn.nextSibling);
+    const deleteHfUrlBtn = document.getElementById('deleteHfUrlButton');
+    if (deleteHfUrlBtn) {
+        deleteHfUrlBtn.addEventListener('click', () => {
+            if (confirm(isEn ? 'Delete saved URL?' : '保存されたURL設定を削除しますか？')) {
+                localStorage.removeItem('plowerHfUrl');
+                if (hfUrlInput) hfUrlInput.value = '';
+                alert(isEn ? 'URL deleted.' : '保存されたURL設定を削除しました。');
+            }
+        });
+    }
 
     // Enterキーでの送信機能
     document.getElementById('userInput').addEventListener('keypress', function(e) {

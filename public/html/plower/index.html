@@ -43,18 +43,21 @@
         <label for="geminiApiKey">Gemini API Key:</label>
         <input type="password" id="geminiApiKey" placeholder="AIzaSy..." style="width: 300px;">
         <button id="saveKeyButton">保存</button>
+        <button id="deleteKeyButton">削除</button>
     </div>
 
     <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
         <label for="hfUrlInput">HF / Ollama URL:</label>
         <input type="password" id="hfUrlInput" placeholder="http://localhost:11434 or https://user-space.hf.space" style="width: 300px;">
         <button id="saveHfUrlButton">保存</button>
+        <button id="deleteHfUrlButton">削除</button>
     </div>
 
     <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
         <label for="hfToken">HF Access Token:</label>
         <input type="password" id="hfToken" placeholder="hf_..." style="width: 300px;">
         <button id="saveHfTokenButton">保存</button>
+        <button id="deleteHfTokenButton">削除</button>
     </div>
 
     <label for="modelSelect">モデル選択:</label>
@@ -94,6 +97,9 @@
                 local: '(local)',
                 hfUrlLabel: 'HF / Ollama URL:',
                 saveHfUrl: 'Save URL',
+                deleteHfUrl: 'Delete URL',
+                deleteKey: 'Delete Key',
+                deleteToken: 'Delete Token',
                 hfTokenLabel: 'HF Access Token:',
                 saveHfToken: 'Save Token',
                 manual: '[Usage Guide]'
@@ -115,7 +121,10 @@
             document.getElementById('saveKeyButton').textContent = t.saveKey;
             document.querySelector('label[for="modelSelect"]').textContent = t.modelLabel;
             document.querySelector('label[for="hfUrlInput"]').textContent = t.hfUrlLabel;
+            document.getElementById('deleteKeyButton').textContent = t.deleteKey;
+            document.getElementById('deleteHfTokenButton').textContent = t.deleteToken;
             document.getElementById('saveHfUrlButton').textContent = t.saveHfUrl;
+            document.getElementById('deleteHfUrlButton').textContent = t.deleteHfUrl;
             document.querySelector('label[for="hfToken"]').textContent = t.hfTokenLabel;
             document.getElementById('saveHfTokenButton').textContent = t.saveHfToken;
             document.getElementById('manualLink').textContent = t.manual;

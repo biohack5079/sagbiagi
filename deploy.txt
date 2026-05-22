@@ -3,6 +3,18 @@ git commit -m "feat: change $(date +'%Y-%m-%d %H:%M:%S')" && \
 git push -u origin main || echo "Git push failed"
 
 
+npm run build
+npm run check
+./start_sagbi.sh
+
+npm install
+npm run build
+npm run preview
+./build_frontend.sh
+
+
+
+
 
 firebase deploy
 

@@ -10,6 +10,9 @@ export default defineConfig({
   root: 'public/html', // ソースファイルがある場所
   base: './', // どこにデプロイしても動くように相対パスにする
   assetsInclude: ['**/*.glb'], // GLBファイルをアセットとして認識
+  worker: {
+    format: 'es',
+  },
   build: {
     chunkSizeWarningLimit: 2000, // 警告が出るしきい値を2MBに引き上げ
     outDir: '../../dist', // ビルド済みJSの出力先

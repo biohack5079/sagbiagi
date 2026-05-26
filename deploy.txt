@@ -13,12 +13,6 @@ npm run preview
 ./build_frontend.sh
 
 
-
-
-
-firebase deploy
-
-
 ./start_sagbi.sh
 
 git reset --hard xxxxxx
@@ -27,16 +21,8 @@ git push origin main --force
 
 
 
-
 x86_64-w64-mingw32-g++ -o /home/me/Documents/d/sagbi/installer/sagbi_install.exe /home/me/Documents/d/sagbi/installer/sagbi_installer.cpp \
     -lshell32 -lurlmon -luser32 -lole32 -mwindows -static
-
-
-sagbi/firebaserc
-
-sagbi/firebase.json
-
-firebase deploy --only hosting --project xxxxxx
 
 
 git config user.email "xxxxxx@gmail.com"
@@ -45,6 +31,7 @@ git config user.name "xxxxxx"
 
 npm install
 npm run build
+npm run dev
 npm run preview
 ./build_frontend.sh
 

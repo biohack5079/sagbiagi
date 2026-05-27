@@ -145,12 +145,12 @@ else
     echo "❌ Failed to update Cloudflare Worker."
 fi
 
-echo "(Skipped firebase deploy. Firebase is safe!)"
+echo "(Firebase deployment skipped. Using Cloudflare Pages instead.)"
 
 echo -e "\nTunnel Ready: $CLOUDFLARE_URL"
 
 # 3. Open Browser
-PRODUCTION_URL="https://sagbiagi.web.app/"
+PRODUCTION_URL="https://sagbiagi.pages.dev/?app=1"
 FINAL_URL=$PRODUCTION_URL
 
 # Local Preview check

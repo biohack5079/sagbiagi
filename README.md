@@ -242,7 +242,7 @@ cmake --build build
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| Plower | [sagbuntu.web.app/plower.html](https://sagbuntu.web.app/plower.html) | Local RAG (Retrieval-Augmented Generation) app |
+| Plower | [sagbiagi.pages.dev](https://sagbiagi.pages.dev/plower/) | Local RAG (Retrieval-Augmented Generation) app |
 | Cybernet Call | [cybernetcall.onrender.com](https://cybernetcall.onrender.com/) | P2P communication platform |
 | G1:M Avatar | [g1m-pwa.onrender.com](https://g1m-pwa.onrender.com/) | AI-driven 3D avatar service with motion capture |
 | HuggingFace | [G1mAvaterUniverse](https://huggingface.co/G1mAvaterUniverse) | Model hosting and inference endpoints |

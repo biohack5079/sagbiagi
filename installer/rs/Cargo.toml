@@ -1,0 +1,26 @@
+[package]
+name = "sagbi-agi"
+version = "1.0.0"
+edition = "2021"
+authors = ["Your Name"]
+description = "SAGBI AGI P2P Bridge and Launcher"
+
+[dependencies]
+tokio = { version = "1", features = ["full", "fs"] }
+reqwest = { version = "0.11", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+opener = "0.7"
+ctrlc = "3.4"
+rpassword = "7.3"
+
+[package.metadata.deb]
+maintainer = "Your Name <mail@example.com>"
+copyright = "2024, Your Name"
+license-file = ["LICENSE", "4"]
+extended-description = """\
+SAGBI AGI provides a distributed P2P bridge for local AI models.
+Includes signaling server and terminal receiver capabilities.
+"""
+section = "utils"
+priority = "optional"

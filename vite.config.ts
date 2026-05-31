@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [react()],
   root: 'public/html', // ソースファイルがある場所
   base: './', // どこにデプロイしても動くように相対パスにする
-  assetsInclude: ['**/*.glb'], // GLBファイルをアセットとして認識
+  assetsInclude: ['**/*.glb', '**/*.md'], // GLBとMarkdownファイルをアセットとして認識
   worker: {
     format: 'es',
   },

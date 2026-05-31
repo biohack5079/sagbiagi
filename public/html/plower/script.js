@@ -13,6 +13,9 @@ let currentImageBlob = null;
 // 言語設定の判定 (日本語以外なら英語モード)
 const isEn = !navigator.language.startsWith('ja');
 
+// システムプロンプトのキャッシュ
+let systemPromptCache = "";
+
 const PREVIEW_MAX_DOCS = 5; // コンテンツ表示エリアに表示する最大ファイル数
 
 // --- OPFS (Origin Private File System) ヘルパー ---
@@ -61,6 +64,19 @@ async function loadDocuments() {
     } catch (e) {
         console.error("Failed to load documents from OPFS:", e);
         persistentDocuments = [];
+    }
+}
+
+// システムプロンプトを外部ファイルからロードする
+async function loadSystemPrompt() {
+    const promptFile = isEn ? './systemprompt_en.md' : './systemprompt_ja.md';
+    try {
+        const response = await fetch(promptFile);
+        if (response.ok) {
+            systemPromptCache = await response.text();
+        }
+    } catch (e) {
+        console.error("Failed to load system prompt:", e);
     }
 }
 
@@ -989,36 +1005,24 @@ async function sendToModel() {
     // コンテキストは300文字程度に抑える必要がある (日本語は1文字≒2-3トークン)
     const isCpuCapsule = modelSelect === 'webgpu-wasm-capsule';
     // ブラウザ推論(WebGPU/WASM)はメモリ制限があるため、コンテキストを適度に制限する (2000文字程度)
-    const maxContextChars = isCpuCapsule ? 2000 : 15000;
+    const maxContextChars = isCpuCapsule ? 3000 : 15000;
     context = context.slice(0, maxContextChars);
+
+    // システムプロンプトが未ロードならロードを試みる
+    if (!systemPromptCache) await loadSystemPrompt();
+    const systemPrompt = systemPromptCache || "You are a world-class coding assistant. Always answer in the same language as the user's question. If the provided reference documents don't contain the answer, use your general expert knowledge.";
 
     // プロンプトの生成: LlamaやQwenなど高性能モデル用に詳細な指示を含める
     let prompt;
-    if (isCpuCapsule) {
-        if (!context) {
-            // コンテキストがない場合のシンプルなプロンプト
-            prompt = userInput;
-        } else {
-            // カプセル版（小型モデル）用: 英語の複雑な指示は混乱を招くため、シンプルな日本語プロンプトを使用
-            prompt = `以下の参考資料のみに基づいて、質問に日本語で簡潔に答えてください。\n\n【参考資料】\n${context}\n\n【質問】\n${userInput}`;
-        }
-    } else {
-        // 高性能モデル用: 詳細な指示付きプロンプト
-        prompt = `You are a helpful assistant. Your task is to answer the user's question based *only* on the provided [Reference Documents].
+    // WebGPUカプセルと外部APIでプロンプト構造を統一（小型モデルでもシステム指示を認識しやすくするため）
+    prompt = `${systemPrompt}
 
-IMPORTANT INSTRUCTIONS:
-1.  **Answer in the same language as the user's [Question].** (If the question is in Japanese, answer in Japanese. If in English, answer in English).
-2.  Base your answer strictly on the information within the [Reference Documents]. Do not use any external knowledge.
-3.  **Language Handling:** The documents may be in a different language than the question. You must translate and interpret the documents to answer the question accurately.
-4.  If the answer cannot be found in the [Reference Documents], you MUST state that the information is not available, in the same language as the question.
-5.  **Visual Reference:** If an image (marked as [Image Data]) is requested, use the vision input to provide details.
-
-[Reference Documents]
+[Reference Documents] (Current Project Files)
 ${context}
 
+---
 [Question]
 ${userInput}`;
-    }
 
     // --- 回答生成 ---
     try {
@@ -1094,6 +1098,7 @@ ${userInput}`;
 // --- 初期化とイベントリスナー設定 ---
 document.addEventListener('DOMContentLoaded', () => {
     loadDocuments(); 
+    loadSystemPrompt(); // システムプロンプトの事前読み込み
     document.getElementById('sendButton').addEventListener('click', sendToModel);
     document.getElementById('resetDocsButton').addEventListener('click', resetDocuments);
     document.getElementById('saveOcrButton').addEventListener('click', saveOcrTextAsFile);

@@ -10,8 +10,8 @@ let currentImageName = "";
 // 現在解析対象となっている画像のオリジナルデータ (高画質)
 let currentImageBlob = null;
 
-// 言語設定の判定 (日本語以外なら英語モード)
-const isEn = !navigator.language.startsWith('ja');
+// 言語設定の判定用 (初期値はブラウザ設定、後に質問内容で動的に更新)
+let isEn = !navigator.language.startsWith('ja');
 
 // システムプロンプトのキャッシュ
 let systemPromptCache = "";
@@ -68,8 +68,9 @@ async function loadDocuments() {
 }
 
 // システムプロンプトを外部ファイルからロードする
-async function loadSystemPrompt() {
-    const promptFile = isEn ? './systemprompt_en.md' : './systemprompt_ja.md';
+async function loadSystemPrompt(forceLang = null) {
+    const targetIsEn = forceLang !== null ? forceLang === 'en' : isEn;
+    const promptFile = targetIsEn ? './systemprompt_en.md' : './systemprompt_ja.md';
     try {
         const response = await fetch(promptFile);
         if (response.ok) {
@@ -976,15 +977,36 @@ async function sendToModel() {
     }
     
     // --- フロントエンドでの検索処理を廃止 ---
-    // ユーザーの指示に基づき、ローカルでの検索や翻訳を行わず、全ての文書をコンテキストとしてLLMに渡す。
-    console.log(`全ての文書(${allDocuments.length}件)をコンテキストとして使用します。`);
+    
+    // 質問文から言語を判定し、システムプロンプトを切り替える
+    const hasJapanese = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(userInput);
+    const detectedIsEn = !hasJapanese;
+    
+    // 言語が変わった場合、またはキャッシュがない場合はプロンプトをリロード
+    if (detectedIsEn !== isEn || !systemPromptCache) {
+        isEn = detectedIsEn;
+        await loadSystemPrompt(isEn ? 'en' : 'ja');
+    }
+
+    const languageSuffix = isEn 
+        ? "\n\nImportant: Please answer in English."
+        : "\n\n重要: 回答は必ず日本語で行ってください。資料が英語であっても、日本語で詳しく説明してください。";
+
+    // 質問内容に関連するファイルを優先的にコンテキストに含めるためのソート
+    const prioritizedDocs = [...allDocuments].sort((a, b) => {
+        const aMentioned = userInput.toLowerCase().includes(a.name.toLowerCase());
+        const bMentioned = userInput.toLowerCase().includes(b.name.toLowerCase());
+        if (aMentioned && !bMentioned) return -1;
+        if (!aMentioned && bMentioned) return 1;
+        return 0;
+    });
     
     let imageDataToSend = currentImageBase64;
 
     // 文書リストからテキストコンテキストを作成。
     // 画像データ（Base64文字列）が混ざるとプロンプトが巨大になり、AIが混乱するため、[Image Data]というラベルに置き換える。
     let contextParts = [];
-    for (const docMeta of allDocuments) {
+    for (const docMeta of prioritizedDocs) {
         const content = await getDocumentContent(docMeta.name);
         if (content.startsWith('data:image/')) {
             // 質問の中でファイル名が言及されている画像を優先的にVision入力として選択
@@ -1008,34 +1030,79 @@ async function sendToModel() {
     const maxContextChars = isCpuCapsule ? 3000 : 15000;
     context = context.slice(0, maxContextChars);
 
-    // システムプロンプトが未ロードならロードを試みる
-    if (!systemPromptCache) await loadSystemPrompt();
-    const systemPrompt = systemPromptCache || "You are a world-class coding assistant. Always answer in the same language as the user's question. If the provided reference documents don't contain the answer, use your general expert knowledge.";
+    // UIステータス表示の改善（回答エリアの初期化）
+    responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> <span class="status-msg">${isEn ? 'Thinking...' : '思考中...'}</span>`;
+
+    const systemPrompt = systemPromptCache || "You are a world-class coding assistant.";
 
     // プロンプトの生成: LlamaやQwenなど高性能モデル用に詳細な指示を含める
     let prompt;
     // WebGPUカプセルと外部APIでプロンプト構造を統一（小型モデルでもシステム指示を認識しやすくするため）
-    prompt = `${systemPrompt}
+    prompt = `### System Instructions
+${systemPrompt}
 
-[Reference Documents] (Current Project Files)
+### Reference Documents (Context)
 ${context}
 
 ---
-[Question]
-${userInput}`;
+### User Question
+${userInput}
+
+---
+### Final Instruction:
+${languageSuffix}
+Strictly output ONLY the answer to the question. Do not include project headers or "About" sections.`;
 
     // --- 回答生成 ---
     try {
         // 共通関数を使ってリクエスト
         const finalResult = await performLlmRequest(modelSelect, prompt, geminiApiKey, (chunkText) => {
             // ストリーミング更新
-            responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${chunkText.replace(/\n/g, '<br>')}`;
+            // ステータスメッセージを分離して表示
+            let statusHtml = "";
+            if (isCpuCapsule) {
+                statusHtml = `<br><small style="color:#888;">[${isEn ? 'WASM/CPU Inference' : 'WASM/CPU推論実行中'}]</small>`;
+            }
+            responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${chunkText.replace(/\n/g, '<br>')}${statusHtml}`;
             chatLog.scrollTop = chatLog.scrollHeight;
         }, imageDataToSend);
 
         // 最終結果の表示 (非ストリーミングモデル用)
         responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${finalResult.replace(/\n/g, '<br>')}`;
         
+        // 「RAGソースに加える」ボタンの追加
+        const saveChatBtn = document.createElement('button');
+        saveChatBtn.textContent = isEn ? 'Add to RAG Source' : 'RAGソースに加える';
+        saveChatBtn.style.marginTop = '10px';
+        saveChatBtn.style.display = 'block';
+        saveChatBtn.onclick = async () => {
+            const chatContent = `Question: ${userInput}\n\nAnswer: ${finalResult}`;
+            const now = new Date();
+            const pad = (num) => num.toString().padStart(2, '0');
+            const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+            const defaultName = `chat_memo_${timestamp}.txt`;
+
+            const filename = await showRenameDialog(isEn ? 'Save Chat to RAG' : 'チャットをRAGソースに保存', defaultName);
+            if (!filename) return;
+
+            // OPFSへの保存
+            await saveDocumentToOPFS(filename, chatContent);
+            if (!persistentDocuments.some(d => d.name === filename)) {
+                persistentDocuments.push({ name: filename });
+            }
+
+            // ローカルフォルダ同期が有効ならそちらにも保存
+            if (directoryHandle) {
+                const blob = new Blob([chatContent], { type: 'text/plain;charset=utf-8' });
+                await saveBlobToDirectory(blob, filename);
+            }
+
+            await updateFileListDisplay();
+            saveChatBtn.textContent = isEn ? 'Added to RAG' : 'RAGに追加済み';
+            saveChatBtn.disabled = true;
+        };
+        responseParagraph.appendChild(saveChatBtn);
+
         // 画像を解析に使用した場合、保存を提案する
         if (currentImageBase64) {
             const savePrompt = document.createElement('div');

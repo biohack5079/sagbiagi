@@ -1,6 +1,14 @@
 // 永続化された文書のメタデータ（ファイル名）のみを格納
 let persistentDocuments = [];
 
+// 同一オリジンの他タブ/iframeとファイル更新を同期するためのチャネル
+const syncChannel = new BroadcastChannel('plower_sync');
+syncChannel.addEventListener('message', (event) => {
+    if (event.data === 'update') {
+        loadDocuments();
+    }
+});
+
 // 現在解析対象となっている画像データ (Base64)
 let currentImageBase64 = null;
 
@@ -45,6 +53,7 @@ async function saveDocumentToOPFS(name, content) {
         const writable = await fileHandle.createWritable();
         await writable.write(content);
         await writable.close();
+        syncChannel.postMessage('update');
     } catch (e) {
         console.error(`Failed to save document ${name} to OPFS:`, e);
     }
@@ -106,6 +115,7 @@ async function resetDocuments() {
             const root = await navigator.storage.getDirectory();
             await root.removeEntry('rag_sources', { recursive: true });
 
+            syncChannel.postMessage('update');
             persistentDocuments = [];
             document.getElementById('pasteArea').value = '';
             clearOcrDisplay();
@@ -374,6 +384,7 @@ async function renameDocument(index) {
         const ragDir = await getRagDir();
         await ragDir.removeEntry(doc.name);
         
+        syncChannel.postMessage('update');
         doc.name = newName;
         updateFileListDisplay();
     }
@@ -386,6 +397,7 @@ async function deleteDocument(index) {
         const ragDir = await getRagDir();
         await ragDir.removeEntry(doc.name);
         
+        syncChannel.postMessage('update');
         persistentDocuments.splice(index, 1);
         updateFileListDisplay();
     }
@@ -1164,6 +1176,32 @@ Strictly output ONLY the answer to the question. Do not include project headers 
 
 // --- 初期化とイベントリスナー設定 ---
 document.addEventListener('DOMContentLoaded', () => {
+    // --- ブックマークレットのURLを現在の環境（localhostか公開URLか）に合わせて動的に更新 ---
+    const bookmarkletLink = document.getElementById('bookmarkletLink');
+    if (bookmarkletLink) {
+        const currentUrl = window.location.origin + window.location.pathname;
+        // ブックマークレット内の 'u' (URL) を現在のURLに差し替える
+        const bookmarkletCode = `javascript:(function(){
+            const u='${currentUrl}';
+            const n='plower_popup';
+            const w=window.open(u, n, 'width=500,height=900');
+            const send=()=>{
+                w.postMessage({
+                    type:'PLOWER_INJECT_CONTENT',
+                    name:'Page: '+document.title.substring(0,30)+'.txt',
+                    content:'URL: '+window.location.href+'\\n\\n'+document.body.innerText
+                },'*');
+            };
+            window.addEventListener('message', function listener(e){
+                if(e.data==='PLOWER_READY'){ send(); window.removeEventListener('message', listener); }
+            });
+            /* 念のための予備送信 */
+            setTimeout(send, 3000);
+            if(window.focus)w.focus();
+        })();`.replace(/\s+/g, ' ');
+        bookmarkletLink.href = bookmarkletCode;
+    }
+
     loadDocuments(); 
     loadSystemPrompt(); // システムプロンプトの事前読み込み
     document.getElementById('sendButton').addEventListener('click', sendToModel);
@@ -1278,4 +1316,24 @@ document.addEventListener('DOMContentLoaded', () => {
             sendToModel();
         }
     });
+
+    // --- ブックマークレット連携用: 外部サイトからのコンテンツ注入リスナー ---
+    window.addEventListener('message', async (event) => {
+        // セキュリティ上の配慮が必要な場合は event.origin をチェックしてください
+        if (event.data && event.data.type === 'PLOWER_INJECT_CONTENT') {
+            const { name, content } = event.data;
+            if (name && content) {
+                await saveDocumentToOPFS(name, content);
+                if (!persistentDocuments.some(d => d.name === name)) {
+                    persistentDocuments.push({ name: name });
+                }
+                await updateFileListDisplay();
+            }
+        }
+    });
+
+    // ブックマークレット連携用: ポップアップ元のページに対して準備完了を通知
+    if (window.opener) {
+        window.opener.postMessage('PLOWER_READY', '*');
+    }
 });

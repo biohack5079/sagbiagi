@@ -5,6 +5,24 @@ body {
     color: #333;
 }
 
+h1 {
+    white-space: nowrap;
+}
+
+/* ブックマークレットリンクのスタイル */
+.bookmarklet-link {
+    font-size: 0.4em;
+    margin-left: 10px;
+    text-decoration: none;
+    background: #e3f2fd;
+    padding: 5px 10px;
+    border-radius: 4px;
+    color: #1976d2;
+    vertical-align: middle;
+    border: 1px dashed #1976d2;
+    cursor: move; /* ドラッグ可能であることを示す */
+}
+
 /* --- RAGコントロールヘッダーの修正スタイル (レイアウト崩れ対策) --- */
 .rag-controls-header {
     display: flex; /* 要素を横並びにする */

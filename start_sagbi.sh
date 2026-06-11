@@ -126,9 +126,15 @@ fi
 
 echo "[3/3] Updating Cloudflare Worker Environment..."
 
-# 🚨 【修正ポイント】
-# `--secret-text` フラグを廃止し、echo の出力をパイプで流し込んでシークレットを登録します。
-if echo "$CLOUDFLARE_URL" | wrangler secret put TUNNEL_URL --name sagbi; then
+# 認証状態のチェックと通知
+if ! npx wrangler whoami > /dev/null 2>&1; then
+    echo "⚠️  Cloudflare (Wrangler) にログインしていない、または認証が有効ではありません。"
+    echo "   'npx wrangler login' を実行して認証を完了させてください。"
+    echo "   (Account IDを手動設定する場合は signaling/.env に CLOUDFLARE_ACCOUNT_ID を設定してください)"
+fi
+
+# シークレットの登録 (npxを使用して確実に実行)
+if echo "$CLOUDFLARE_URL" | npx wrangler secret put TUNNEL_URL --name sagbi; then
     echo "Worker environment variable updated successfully!"
     echo "Waiting for Cloudflare propagation (5s)..."
     sleep 5

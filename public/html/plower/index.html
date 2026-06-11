@@ -59,12 +59,6 @@
         <button id="saveHfTokenButton">保存</button>
     </div>
 
-    <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
-        <label for="contextLimitInput">コンテキスト制限 (文字数, 0=無制限):</label>
-        <input type="number" id="contextLimitInput" placeholder="15000" style="width: 100px;">
-        <button id="saveContextLimitButton">保存</button>
-    </div>
-
     <label for="modelSelect">モデル選択:</label>
     <select id="modelSelect">
         <option value="gemma:7b">Gemma 7B (ローカル)</option>
@@ -73,7 +67,11 @@
         <option value="gpt-oss:120b">GPT-OSS 120B (ローカル)</option>
         <option value="sarasina">Sarasina (SoftBank/local)</option>
         <option value="gemma3:4b-it-q4_K_M">Gemma 3 4B (HF Space / Ollama)</option>
-        <option value="webgpu-wasm-capsule" selected>WebGPU (オフライン)</option>
+        <option value="webgpu:onnx-community/Qwen2.5-0.5B-Instruct" selected>WebGPU: Qwen 2.5 0.5B (デフォルト)</option>
+        <option value="webgpu:onnx-community/Llama-3.2-1B-Instruct">WebGPU: Llama 3.2 1B (高精度)</option>
+        <option value="webgpu:onnx-community/Gemma-2-2b-it">WebGPU: Gemma 2 2B (Google)</option>
+        <option value="webgpu:onnx-community/gpt2">WebGPU: GPT-2 (超軽量)</option>
+        <option value="webgpu:onnx-community/Qwen2-VL-2B-Instruct">WebGPU: Qwen2-VL 2B (画像対応)</option>
         <option value="gemini-flash">Gemini API (クラウド)</option>
     </select>
 
@@ -109,8 +107,6 @@
                 hfTokenLabel: 'HF Access Token:',
                 saveHfToken: 'Save Token',
                 manual: '[Usage Guide]',
-                contextLimitLabel: 'Context Limit (chars, 0=Unlimited):',
-                saveLimit: 'Save',
                 bookmarklet: '[Browser Link]',
                 bookmarkletTip: 'Drag this link to your bookmark bar. It lets you send the current page to Plower.',
                 offline: '(Offline)'
@@ -135,8 +131,6 @@
             document.getElementById('saveHfUrlButton').textContent = t.saveHfUrl;
             document.querySelector('label[for="hfToken"]').textContent = t.hfTokenLabel;
             document.getElementById('saveHfTokenButton').textContent = t.saveHfToken;
-            document.querySelector('label[for="contextLimitInput"]').textContent = t.contextLimitLabel;
-            document.getElementById('saveContextLimitButton').textContent = t.saveLimit;
             document.getElementById('manualLink').textContent = t.manual;
             document.getElementById('bookmarkletLink').textContent = t.bookmarklet;
             document.getElementById('bookmarkletLink').title = t.bookmarkletTip;

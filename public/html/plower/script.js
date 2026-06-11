@@ -841,8 +841,11 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
         if (onChunk) onChunk(result);
         return result;
 
-    } else if (modelSelect === 'webgpu-wasm-capsule') {
+    } else if (modelSelect.startsWith('webgpu')) {
         // --- WebGPU+WASM Offline Capsule ---
+        const specificModelId = modelSelect.split(':')[1];
+        const hfToken = localStorage.getItem('plowerHfToken');
+
         // P2P分散コンピューティングの拡張点（Cloudflareシグナリング）
         // 現在はローカルのWeb Workerと直結していますが、この通信をWebSocketに切り替えることで
         // 別端末のブラウザ（GPU）で推論させることも可能になります。
@@ -880,7 +883,13 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
                 }
             };
             window.capsuleWorker.addEventListener('message', onMessage);
-            window.capsuleWorker.postMessage({ type: 'generate', prompt: llmPrompt, image: imageData });
+            window.capsuleWorker.postMessage({ 
+                type: 'generate', 
+                prompt: llmPrompt, 
+                image: imageData, 
+                modelId: specificModelId,
+                token: hfToken
+            });
         });
 
     } else {
@@ -1037,16 +1046,10 @@ async function sendToModel() {
     // CPU推論 (GPT-2) はトークン上限が1024のため、コンテキストを大幅に制限する
     // GPT-2: プロンプトテンプレート自体が~100トークン、質問が~50トークンを占めるため
     // コンテキストは300文字程度に抑える必要がある (日本語は1文字≒2-3トークン)
-    const isCpuCapsule = modelSelect === 'webgpu-wasm-capsule';
-    
-    // ユーザー設定の制限を読み込み (未設定ならデフォルト値を使用)
-    const savedLimit = localStorage.getItem('plowerContextLimit');
-    const parsedLimit = parseInt(savedLimit);
-    const maxContextChars = isNaN(parsedLimit) ? (isCpuCapsule ? 3000 : 15000) : (parsedLimit || Infinity);
-
-    if (maxContextChars !== Infinity) {
-        context = context.slice(0, maxContextChars);
-    }
+    const isCpuCapsule = modelSelect.startsWith('webgpu');
+    // ブラウザ推論(WebGPU/WASM)はメモリ制限があるため、コンテキストを適度に制限する (2000文字程度)
+    const maxContextChars = isCpuCapsule ? 3000 : 15000;
+    context = context.slice(0, maxContextChars);
 
     // UIステータス表示の改善（回答エリアの初期化）
     responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> <span class="status-msg">${isEn ? 'Thinking...' : '思考中...'}</span>`;
@@ -1314,24 +1317,6 @@ document.addEventListener('DOMContentLoaded', () => {
         alert(isEn ? 'Saved URL deleted (Reset to default).' : '保存されたURL設定を削除しました（デフォルトのlocalhostに戻りました）。');
     });
     saveHfUrlBtn.parentNode.insertBefore(deleteHfUrlBtn, saveHfUrlBtn.nextSibling);
-
-    // --- コンテキスト制限設定の初期化と保存 ---
-    const contextLimitInput = document.getElementById('contextLimitInput');
-    if (contextLimitInput) {
-        const savedLimit = localStorage.getItem('plowerContextLimit');
-        if (savedLimit !== null) {
-            contextLimitInput.value = savedLimit;
-        }
-    }
-
-    const saveContextLimitBtn = document.getElementById('saveContextLimitButton');
-    if (saveContextLimitBtn) {
-        saveContextLimitBtn.addEventListener('click', () => {
-            const limit = document.getElementById('contextLimitInput').value.trim();
-            localStorage.setItem('plowerContextLimit', limit);
-            alert(isEn ? 'Context limit saved.' : 'コンテキスト制限の設定を保存しました。');
-        });
-    }
 
     // Enterキーでの送信機能 (keydownを使用し、リピート入力とShift+Enterを除外)
     document.getElementById('userInput').addEventListener('keydown', function(e) {

@@ -4,7 +4,7 @@ import { pipeline, env, RawImage, TextStreamer } from "https://cdn.jsdelivr.net/
 // WebGPUが使えない環境（Linuxの一部や未対応ブラウザ）では、自動的にCPU(WASM)にフォールバックします。
 
 env.allowLocalModels = false;
-env.useBrowserCache = true;
+env.useBrowserCache = false;
 env.useOriginPrivateFileSystem = true;
 // CPU(WASM)で動かす場合のスレッド数を最適化
 env.backends.onnx.wasm.numThreads = 1; // single-threaded to work without crossOriginIsolated
@@ -17,7 +17,7 @@ const CPU_INFERENCE_TIMEOUT_MS = 6000000;
 let generatorPromise = null;
 let currentGeneratorModelId = null;
 
-async function initGenerator(task, modelId, _unused_device) {
+async function initGenerator(task, modelId, device, token = null) {
     if (currentGeneratorModelId === modelId && generatorPromise) {
         return generatorPromise;
     }
@@ -26,16 +26,15 @@ async function initGenerator(task, modelId, _unused_device) {
     if (generatorPromise) {
         try {
             const oldGen = await generatorPromise;
-            if (oldGen && typeof oldGen.dispose === 'function') await oldGen.dispose();
+            if (typeof oldGen.dispose === 'function') oldGen.dispose();
         } catch(e) {}
     }
-
-    const { device, hasF16 } = await checkDevice();
     
     currentGeneratorModelId = modelId;
-    generatorPromise = pipeline(task, modelId, {
+    const options = {
         device: device,
-        dtype: device === 'webgpu' ? (hasF16 ? 'q4f16' : 'q4') : 'q4',
+        dtype: device === 'webgpu' ? 'q4f16' : 'q4',
+        token: token,
         progress_callback: (x) => {
             if (x.status === 'download') {
                 const progressStr = (typeof x.progress === 'number' && !isNaN(x.progress)) ? ` (${Math.round(x.progress)}%)` : '';
@@ -44,7 +43,8 @@ async function initGenerator(task, modelId, _unused_device) {
                 postMessage({ status: 'loading', output: `モデル構築中...` });
             }
         }
-    });
+    };
+    generatorPromise = pipeline(task, modelId, options);
     return generatorPromise;
 }
 
@@ -53,12 +53,10 @@ async function checkDevice() {
     if (navigator.gpu) {
         try {
             const adapter = await navigator.gpu.requestAdapter();
-            if (adapter) {
-                return { device: 'webgpu', hasF16: adapter.features.has('shader-f16') };
-            }
+            if (adapter) return 'webgpu';
         } catch (e) { }
     }
-    return { device: 'wasm', hasF16: false };
+    return 'wasm';
 }
 
 // -------------------------------------------------
@@ -68,14 +66,12 @@ async function checkDevice() {
 // -------------------------------------------------
 (async () => {
     try {
-        const { device } = await checkDevice();
-        const preModelId = device === 'webgpu'
-            ? 'onnx-community/Qwen2.5-0.5B-Instruct'
-            : 'onnx-community/Qwen2.5-1.5B-Instruct';
-        const task = device === 'webgpu' ? 'image-text-to-text' : 'text-generation';
-        postMessage({ status: 'loading', output: `Pre‑download initializing (${device.toUpperCase()})...` });
+        const dev = await checkDevice();
+        const preModelId = 'onnx-community/Qwen2.5-0.5B-Instruct';
+        const task = 'text-generation';
+        postMessage({ status: 'loading', output: `Pre‑download initializing (${dev.toUpperCase()})...` });
         
-        await initGenerator(task, preModelId, device);
+        await initGenerator(task, preModelId, dev);
         
         postMessage({ status: 'loading', output: 'Model pre‑download completed.' });
     } catch (e) {
@@ -85,21 +81,17 @@ async function checkDevice() {
 })();
 
 self.onmessage = async (e) => {
-    const { type, prompt, image } = e.data;
+    const { type, prompt, image, modelId: requestedModelId, token } = e.data;
 
     if (type === 'generate') {
         try {
-            const { device: currentDevice } = await checkDevice();
+            let currentDevice = await checkDevice();
             
-            // 画像があり、ユーザーが実行を希望している場合はVLMを使用。
-            // CPU(WASM)環境では非常に低速ですが、ユーザーの要望により制限を解除します。
-            let useVision = !!image;
-            // メモリ不足エラー(3588578960)を避けるため、デフォルトをより軽量で安定した0.5Bに設定
-            let modelId = useVision
-                ? 'onnx-community/Qwen2-VL-2B-Instruct'
-                : 'onnx-community/Qwen2.5-0.5B-Instruct';
-            
-            // Qwen2.5-1.5B は Llama-3.2-1B よりも日本語の理解・生成能力が圧倒的に高いです
+            // UIで選ばれたモデルをそのまま使用（未指定ならQwen 0.5B）
+            const modelId = requestedModelId || 'onnx-community/Qwen2.5-0.5B-Instruct';
+            const isVLM = modelId.includes('VL');
+            const task = isVLM ? 'image-text-to-text' : 'text-generation';
+            let useVision = !!image && isVLM;
 
             let warningPrefix = "";
             if (image && currentDevice === 'wasm') {
@@ -112,13 +104,12 @@ self.onmessage = async (e) => {
             // Attempt to load the selected model, fallback to a tiny model on failure
             try {
                 postMessage({ status: 'loading', output: `初期化中... (エンジン: ${currentDevice.toUpperCase()})` });
-                generator = await initGenerator(useVision ? 'image-text-to-text' : 'text-generation', modelId, currentDevice);
+                generator = await initGenerator(task, modelId, currentDevice, token);
                 generator.modelId = modelId;
             } catch (e) {
-                console.warn('Primary model load failed, falling back to 0.5B:', e);
-                // fallback to tiny Qwen for CPU only
+                console.warn('Model load failed, falling back to tiny Qwen:', e);
                 const fallbackId = 'onnx-community/Qwen2.5-0.5B-Instruct';
-                generator = await initGenerator('text-generation', fallbackId, 'wasm');
+                generator = await initGenerator('text-generation', fallbackId, 'wasm', token);
                 generator.modelId = fallbackId;
                 useVision = false;
                 warningPrefix = "⚠️ 大きなモデルのロードに失敗した（またはメモリ不足の）ため、軽量Qwen(0.5B)にフォールバックしました。画像は無視されます。\n\n" + warningPrefix;
@@ -134,7 +125,7 @@ self.onmessage = async (e) => {
                         role: "user",
                         content: [
                             { type: "image" },
-                            { type: "text", text: prompt + "\n(指示: 提供された画像とテキストを確認し、自然な日本語で詳しく回答してください。)" }
+                            { type: "text", text: prompt + "\n(指示: Gemini APIのように、必ず日本語で簡潔に要点のみを回答してください。長文は避けてください。)" }
                         ]
                     }
                 ];
@@ -153,7 +144,7 @@ self.onmessage = async (e) => {
             } else {
                 // テキストのみのフォーマット
                 const messages = [
-                    { role: "system", content: "あなたは親切で優秀なAIアシスタントです。提供されたコンテキストを十分に活用し、論理的で自然な日本語で回答してください。" },
+                    { role: "system", content: "あなたは役に立つアシスタントです。必ず日本語で、Gemini APIのように非常に簡潔に要点のみを回答してください。長文は避けてください。" },
                     { role: "user", content: prompt }
                 ];
                 let formattedPrompt;
@@ -170,16 +161,15 @@ self.onmessage = async (e) => {
             }
 
             // --- 小型モデル (CPU/WASM) 用: 入力トークン数の安全制限 ---
-            const isTinyFallback = generator.modelId.includes('0.5B');
+            const isTinyFallback = generator.modelId === 'onnx-community/Qwen2.5-0.5B-Instruct';
             let maxNewTokens = 1024;
             
-            // 入力長制限の緩和
-            // ユーザー設定を尊重するため、0.5Bモデル以外は極端なカットを避ける
             if (isTinyFallback) {
+                // 入力が長すぎるとメモリ不足になるため、入力側のみ安全策をとる
                 const promptText = typeof inputs === 'string' ? inputs : prompt;
-                if (promptText.length > 5000) {
-                    inputs = promptText.slice(0, 5000);
-                    console.warn(`Input truncated to 5000 chars for stability on tiny model`);
+                if (promptText.length > 2000) {
+                    inputs = promptText.slice(0, 2000);
+                    console.warn(`Input truncated to 2000 chars`);
                 }
             } else {
                 maxNewTokens = 1024;

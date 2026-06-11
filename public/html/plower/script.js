@@ -1038,9 +1038,15 @@ async function sendToModel() {
     // GPT-2: プロンプトテンプレート自体が~100トークン、質問が~50トークンを占めるため
     // コンテキストは300文字程度に抑える必要がある (日本語は1文字≒2-3トークン)
     const isCpuCapsule = modelSelect === 'webgpu-wasm-capsule';
-    // ブラウザ推論(WebGPU/WASM)はメモリ制限があるため、コンテキストを適度に制限する (2000文字程度)
-    const maxContextChars = isCpuCapsule ? 3000 : 15000;
-    context = context.slice(0, maxContextChars);
+    
+    // ユーザー設定の制限を読み込み (未設定ならデフォルト値を使用)
+    const savedLimit = localStorage.getItem('plowerContextLimit');
+    const parsedLimit = parseInt(savedLimit);
+    const maxContextChars = isNaN(parsedLimit) ? (isCpuCapsule ? 3000 : 15000) : (parsedLimit || Infinity);
+
+    if (maxContextChars !== Infinity) {
+        context = context.slice(0, maxContextChars);
+    }
 
     // UIステータス表示の改善（回答エリアの初期化）
     responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> <span class="status-msg">${isEn ? 'Thinking...' : '思考中...'}</span>`;
@@ -1308,6 +1314,24 @@ document.addEventListener('DOMContentLoaded', () => {
         alert(isEn ? 'Saved URL deleted (Reset to default).' : '保存されたURL設定を削除しました（デフォルトのlocalhostに戻りました）。');
     });
     saveHfUrlBtn.parentNode.insertBefore(deleteHfUrlBtn, saveHfUrlBtn.nextSibling);
+
+    // --- コンテキスト制限設定の初期化と保存 ---
+    const contextLimitInput = document.getElementById('contextLimitInput');
+    if (contextLimitInput) {
+        const savedLimit = localStorage.getItem('plowerContextLimit');
+        if (savedLimit !== null) {
+            contextLimitInput.value = savedLimit;
+        }
+    }
+
+    const saveContextLimitBtn = document.getElementById('saveContextLimitButton');
+    if (saveContextLimitBtn) {
+        saveContextLimitBtn.addEventListener('click', () => {
+            const limit = document.getElementById('contextLimitInput').value.trim();
+            localStorage.setItem('plowerContextLimit', limit);
+            alert(isEn ? 'Context limit saved.' : 'コンテキスト制限の設定を保存しました。');
+        });
+    }
 
     // Enterキーでの送信機能 (keydownを使用し、リピート入力とShift+Enterを除外)
     document.getElementById('userInput').addEventListener('keydown', function(e) {

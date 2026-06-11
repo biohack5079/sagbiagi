@@ -59,6 +59,12 @@
         <button id="saveHfTokenButton">保存</button>
     </div>
 
+    <div style="margin-bottom: 10px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
+        <label for="contextLimitInput">コンテキスト制限 (文字数, 0=無制限):</label>
+        <input type="number" id="contextLimitInput" placeholder="15000" style="width: 100px;">
+        <button id="saveContextLimitButton">保存</button>
+    </div>
+
     <label for="modelSelect">モデル選択:</label>
     <select id="modelSelect">
         <option value="gemma:7b">Gemma 7B (ローカル)</option>
@@ -103,6 +109,8 @@
                 hfTokenLabel: 'HF Access Token:',
                 saveHfToken: 'Save Token',
                 manual: '[Usage Guide]',
+                contextLimitLabel: 'Context Limit (chars, 0=Unlimited):',
+                saveLimit: 'Save',
                 bookmarklet: '[Browser Link]',
                 bookmarkletTip: 'Drag this link to your bookmark bar. It lets you send the current page to Plower.',
                 offline: '(Offline)'
@@ -127,6 +135,8 @@
             document.getElementById('saveHfUrlButton').textContent = t.saveHfUrl;
             document.querySelector('label[for="hfToken"]').textContent = t.hfTokenLabel;
             document.getElementById('saveHfTokenButton').textContent = t.saveHfToken;
+            document.querySelector('label[for="contextLimitInput"]').textContent = t.contextLimitLabel;
+            document.getElementById('saveContextLimitButton').textContent = t.saveLimit;
             document.getElementById('manualLink').textContent = t.manual;
             document.getElementById('bookmarkletLink').textContent = t.bookmarklet;
             document.getElementById('bookmarkletLink').title = t.bookmarkletTip;

@@ -135,9 +135,9 @@ kubectl exec -it deployment/ollama -- ollama pull gemma3:4b-it-q4_K_M
 
 | サービス | URL | 説明 |
 |---------|-----|-------------|
-| Plower | sagbuntu.web.app/plower.html | ローカルRAG（検索拡張生成）アプリ |
+| Plower | https://sagbiagi.pages.dev/plower | ローカルRAG（検索拡張生成）アプリ |
 | Cybernet Call | cybernetcall.onrender.com | P2P通信プラットフォーム |
-| G1:M Avatar | g1m-pwa.onrender.com | モーションキャプチャ対応3Dアバターサービス |
+| G1:M Avatar | dj-g1m.onrender.com | モーションキャプチャ対応3Dアバターサービス |
 | HuggingFace | G1mAvaterUniverse | モデルホスティングと推論エンドポイント |
 
 ---

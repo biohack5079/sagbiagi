@@ -374,6 +374,117 @@ function showRenameDialog(titleText, initialValue) {
     });
 }
 
+// Hugging Face 認証エラー用のダイアログを表示し、トークンの入力を待つ
+async function showAuthDialog(modelId) {
+    return new Promise((resolve, reject) => {
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.backgroundColor = 'rgba(0,0,0,0.6)';
+        overlay.style.zIndex = '3000';
+        overlay.style.display = 'flex';
+        overlay.style.justifyContent = 'center';
+        overlay.style.alignItems = 'center';
+        overlay.style.backdropFilter = 'blur(4px)';
+
+        const dialog = document.createElement('div');
+        dialog.style.backgroundColor = 'white';
+        dialog.style.padding = '25px';
+        dialog.style.borderRadius = '12px';
+        dialog.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)';
+        dialog.style.maxWidth = '450px';
+        dialog.style.width = '90%';
+
+        // モデルが「Gated(規約同意が必要)」かどうかを判定
+        const repoUrl = `https://huggingface.co/${modelId}`;
+        let licenseUrl = "";
+        const midLower = modelId.toLowerCase();
+        const isGated = midLower.includes('gemma') || midLower.includes('llama');
+
+        if (midLower.includes('gemma')) {
+            licenseUrl = `https://huggingface.co/google/gemma-2-2b-it`;
+        } else if (midLower.includes('llama')) {
+            licenseUrl = `https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct`;
+        }
+
+        const tokenUrl = `https://huggingface.co/settings/tokens`;
+        const licenseSection = licenseUrl ? `
+            <div style="background:#fff3cd; padding:12px; border-radius:6px; margin-bottom:15px; font-size:13px; border-left: 4px solid #ffc107; color: #856404;">
+                <strong>Step 1: ${isEn ? 'Accept License' : '公式リポジトリで規約同意'}</strong><br>
+                ${isEn ? 'This model requires explicit agreement. Click below and "Agree and access":' : 'このモデルは利用規約への同意が必要です。以下を開き「Agree and access」を押してください：'}<br>
+                <a href="${licenseUrl}" target="_blank" style="color:#856404; font-weight:bold; word-break:break-all; text-decoration:underline;">${licenseUrl}</a>
+            </div>` : '';
+
+        const title = isGated ? (isEn ? 'License Required' : '規約同意と認証が必要です') : (isEn ? 'Model Load Error' : 'モデルの読み込みに失敗しました');
+        const mainMsg = isGated 
+            ? (isEn ? 'Access denied. You need to accept the license and provide a token.' : 'アクセスが拒否されました。利用規約への同意とトークンの入力が必要です。')
+            : (isEn ? 'Could not find the model. Please check the ID or your connection.' : 'モデルが見つかりません。リポジトリ名が正しいか、通信環境を確認してください。');
+
+        dialog.innerHTML = `
+            <h3 style="margin-top:0; color:#d32f2f;">${title}</h3>
+            <p style="font-size:14px; line-height:1.5;">${mainMsg}</p>
+            ${licenseSection}
+            <div style="background:#f9f9f9; padding:12px; border-radius:6px; margin-bottom:15px; font-size:13px; border-left: 4px solid #007bff;">
+                <strong>${isEn ? 'Target Repository' : '読み込み先リポジトリ'}:</strong><br>
+                <a href="${repoUrl}" target="_blank" style="color:#007bff; text-decoration:underline; word-break:break-all; display:block; margin-top:5px; font-weight:bold;">${repoUrl}</a>
+                <p style="margin-top:8px; font-size:11px; color:#666;">
+                    ${isEn ? 'Note: If this is GPT-2 or Qwen, it is public. A 404 here usually means a network error or incorrect model ID.' : '※補足: GPT-2やQwenなどの公開モデルでエラーが出る場合、リポジトリ名の指定ミスか、ネットワークの一時的なエラーの可能性があります。'}
+                </p>
+            </div>
+            ${isGated ? `
+            <div style="background:#f9f9f9; padding:12px; border-radius:6px; margin-bottom:15px; font-size:13px; border-left: 4px solid #28a745;">
+                <strong>${isEn ? 'Token Scope' : 'トークンの権限確認'}:</strong><br>
+                <a href="${tokenUrl}" target="_blank" style="color:#28a745; text-decoration:underline;">${isEn ? 'Settings' : '設定を開く'}</a> ("Read" or "Gated Models" scope)
+            </div>` : ''}
+            <div style="margin-bottom:20px;">
+                <label style="display:block; font-size:13px; font-weight:bold; margin-bottom:5px;">${isEn ? 'HF Token (Optional)' : 'HFトークン（任意）'}</label>
+                <input type="password" id="authDialogToken" placeholder="hf_..." style="width:100%; padding:10px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
+                <small style="color: #666; font-size: 11px; display: block; margin-top: 4px;">${isEn ? 'Tip: "Read" scope is sufficient.' : 'ヒント: "Read"スコープのトークンで十分です。'}</small>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; justify-content:flex-end; gap:12px;">
+                ${!isGated ? `<button id="authDialogNoToken" style="padding:8px 12px; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer;">${isEn ? 'Try without token' : 'トークンなしで試す'}</button>` : ''}
+                <div style="flex-grow:1;"></div>
+                <button id="authDialogCancel" style="padding:8px 16px; background:none; border:1px solid #ccc; border-radius:4px; cursor:pointer;">${isEn ? 'Cancel' : 'キャンセル'}</button>
+                <button id="authDialogRetry" style="padding:8px 20px; background:#007bff; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">${isEn ? 'Retry' : '再試行'}</button>
+            </div>
+        `;
+
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+
+        const tokenInput = dialog.querySelector('#authDialogToken');
+        tokenInput.value = localStorage.getItem('plowerHfToken') || '';
+        tokenInput.focus();
+
+        const cleanup = () => {
+            document.body.removeChild(overlay);
+        };
+
+        dialog.querySelector('#authDialogCancel').onclick = () => {
+            cleanup();
+            reject();
+        };
+
+        dialog.querySelector('#authDialogNoToken').onclick = () => {
+            cleanup();
+            resolve(""); // トークンなし（空文字）でリトライ
+        };
+
+        dialog.querySelector('#authDialogRetry').onclick = () => {
+            const token = tokenInput.value.trim();
+            cleanup();
+            resolve(token); // 空文字の場合もそのまま解決（トークンなしリトライを許容）
+        };
+
+        tokenInput.onkeydown = (e) => {
+            if (e.key === 'Enter') dialog.querySelector('#authDialogRetry').click();
+        };
+    });
+}
+
 async function renameDocument(index) {
     const doc = persistentDocuments[index];
     const newName = await showRenameDialog(isEn ? 'Rename' : '名前を変更', doc.name);
@@ -856,7 +967,7 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
         return new Promise((resolve, reject) => {
             let lastOutput = '';
             const onMessage = (e) => {
-                const { status, output, error, tokenCount, elapsed, maxTokens } = e.data;
+                const { status, output, error, tokenCount, elapsed, maxTokens, modelId } = e.data;
                 if (status === 'error') {
                     window.capsuleWorker.removeEventListener('message', onMessage);
                     reject(new Error(error));
@@ -877,6 +988,24 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
                 } else if (status === 'complete') {
                     window.capsuleWorker.removeEventListener('message', onMessage);
                     resolve(output);
+                } else if (status === 'auth_error') {
+                    // 認証エラー時はダイアログを出してトークン入力を待ち、その後再送する
+                    showAuthDialog(modelId).then(newToken => {
+                        localStorage.setItem('plowerHfToken', newToken);
+                        const hfInput = document.getElementById('hfToken');
+                        if (hfInput) hfInput.value = newToken;
+                        
+                        window.capsuleWorker.postMessage({ 
+                            type: 'generate', 
+                            prompt: llmPrompt, 
+                            image: imageData, 
+                            modelId: specificModelId,
+                            token: newToken
+                        });
+                    }).catch(() => {
+                        window.capsuleWorker.removeEventListener('message', onMessage);
+                        reject(new Error(isEn ? 'Access denied. Please check Hugging Face permissions.' : 'アクセスが拒否されました。Hugging Faceの権限を確認してください。'));
+                    });
                 } else if (status === 'loading') {
                     lastOutput = `[WASM/WebGPU Loading: ${output}]`;
                     if (onChunk) onChunk(lastOutput);
@@ -1058,21 +1187,27 @@ async function sendToModel() {
 
     // プロンプトの生成: LlamaやQwenなど高性能モデル用に詳細な指示を含める
     let prompt;
-    // WebGPUカプセルと外部APIでプロンプト構造を統一（小型モデルでもシステム指示を認識しやすくするため）
-    prompt = `### System Instructions
-${systemPrompt}
-
-### Reference Documents (Context)
-${context}
-
----
-### User Question
-${userInput}
-
----
-### Final Instruction:
-${languageSuffix}
-Strictly output ONLY the answer to the question. Do not include project headers or "About" sections.`;
+    if (isGpt2) {
+        // GPT-2(Baseモデル)用のシンプルなプロンプト。
+        // 指示を理解できないため、直感的に「続きを書かせる」形式にする。
+        prompt = `Context: ${context}\n\nQuestion: ${userInput}\nAnswer:`;
+    } else {
+        // Qwen/Llama/Gemini等のInstructモデル用。
+        prompt = `### System Instructions
+        ${systemPrompt}
+        
+        ### Reference Documents (Context)
+        ${context}
+        
+        ---
+        ### User Question
+        ${userInput}
+        
+        ---
+        ### Final Instruction:
+        ${languageSuffix}
+        Strictly output ONLY the answer to the question. Do not include project headers or "About" sections.`;
+    }
 
     // --- 回答生成 ---
     try {

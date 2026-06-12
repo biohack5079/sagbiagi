@@ -4,7 +4,7 @@ import { pipeline, env, RawImage, TextStreamer } from "https://cdn.jsdelivr.net/
 // WebGPUが使えない環境（Linuxの一部や未対応ブラウザ）では、自動的にCPU(WASM)にフォールバックします。
 
 env.allowLocalModels = false;
-env.useBrowserCache = false;
+env.useBrowserCache = true;
 env.useOriginPrivateFileSystem = true;
 // CPU(WASM)で動かす場合のスレッド数を最適化
 env.backends.onnx.wasm.numThreads = 1; // single-threaded to work without crossOriginIsolated
@@ -107,12 +107,45 @@ self.onmessage = async (e) => {
                 generator = await initGenerator(task, modelId, currentDevice, token);
                 generator.modelId = modelId;
             } catch (e) {
-                console.warn('Model load failed, falling back to tiny Qwen:', e);
-                const fallbackId = 'onnx-community/Qwen2.5-0.5B-Instruct';
-                generator = await initGenerator('text-generation', fallbackId, 'wasm', token);
-                generator.modelId = fallbackId;
-                useVision = false;
-                warningPrefix = "⚠️ 大きなモデルのロードに失敗した（またはメモリ不足の）ため、軽量Qwen(0.5B)にフォールバックしました。画像は無視されます。\n\n" + warningPrefix;
+                let errorMsg = e.message || '';
+                const isAuthError = errorMsg.includes('401') || errorMsg.includes('403') || errorMsg.includes('404') || errorMsg.includes('Unauthorized') || errorMsg.includes('Forbidden') || errorMsg.includes('Credentials') || errorMsg.includes('not found');
+
+                const isGated = modelId.toLowerCase().includes('gemma') || modelId.toLowerCase().includes('llama');
+
+                if (isAuthError) {
+                    // 公開モデル(GPT-2等)で、かつトークンが設定されている場合に401/403が出たら、
+                    // 保存されているトークンが「腐っている」可能性があるため、トークンなしで1回リトライする
+                    if (!isGated && token) {
+                        console.log('Public model auth error. Retrying without token...');
+                        try {
+                            generator = await initGenerator(task, modelId, currentDevice, null);
+                            generator.modelId = modelId;
+                        } catch (retryErr) {
+                            postMessage({ status: 'auth_error', modelId: modelId, error: retryErr.message });
+                            return;
+                        }
+                    } else {
+                        generatorPromise = null; 
+                        currentGeneratorModelId = null;
+                        postMessage({ status: 'auth_error', modelId: modelId, error: errorMsg });
+                        return;
+                    }
+                } else {
+                    // メモリ不足やストレージ（OPFS）関連のエラーかどうかを判定
+                    const isResourceError = /memory|quota|allocation|out of|buffer/i.test(errorMsg);
+                    
+                    if (isResourceError) {
+                        const detail = `[ストレージ/メモリ上限] OPFS(ブラウザ保存)またはGPUメモリの空きが足りません。\n・PCの空き容量を確認してください。\n・ブラウザの他タブ(YouTube等)を閉じてください。\n(詳細: ${errorMsg})`;
+                        postMessage({ status: 'error', error: detail });
+                        return;
+                    }
+                    console.error('Model load failed:', e);
+                    throw e;
+                }
+
+                // 予期せぬエラーの場合は、フォールバックせずにそのままエラーを投げる
+                console.error('Model load failed:', e);
+                throw e;
             }
 
             postMessage({ status: 'loading', output: `推論中... (${currentDevice.toUpperCase()})` });
@@ -160,8 +193,9 @@ self.onmessage = async (e) => {
                 inputs = formattedPrompt;
             }
 
-            // --- 小型モデル (CPU/WASM) 用: 入力トークン数の安全制限 ---
+            // --- トークン生成制限の調整 ---
             const isTinyFallback = generator.modelId === 'onnx-community/Qwen2.5-0.5B-Instruct';
+            const isGpt2 = generator.modelId.includes('gpt2');
             let maxNewTokens = 1024;
             
             if (isTinyFallback) {
@@ -171,6 +205,9 @@ self.onmessage = async (e) => {
                     inputs = promptText.slice(0, 2000);
                     console.warn(`Input truncated to 2000 chars`);
                 }
+            } else if (isGpt2) {
+                // GPT-2は出力も短めに制限して安定性を高める
+                maxNewTokens = 256;
             } else {
                 maxNewTokens = 1024;
             }
@@ -201,16 +238,17 @@ self.onmessage = async (e) => {
             // CPU (WASM) は非常に遅いため、タイムアウトを設けてフリーズを防ぐ
             const inferencePromise = (async () => {
                 try {
-                    if (useVision) {
-                        await generator(inputs, { max_new_tokens: maxNewTokens, temperature: 0.1, do_sample: false, streamer, repetition_penalty: 1.2 });
-                    } else if (isTinyFallback) {
-                        await generator(inputs, { max_new_tokens: maxNewTokens, temperature: 0.1, do_sample: false, streamer, repetition_penalty: 1.2 });
-                    } else {
-                        await generator(inputs, { max_new_tokens: maxNewTokens, temperature: 0.1, do_sample: false, streamer, repetition_penalty: 1.2 });
-                    }
+                    // パラメータを整理。do_sample: false (Greedy Search) 時は temperature を無効化
+                    const genConfig = { 
+                        max_new_tokens: maxNewTokens, 
+                        do_sample: false, 
+                        streamer, 
+                        repetition_penalty: isGpt2 ? undefined : 1.1 // GPT-2はペナルティに敏感なため除外
+                    };
+                    await generator(inputs, genConfig);
                 } catch (e) {
-                    console.warn('Inference failed, using echo fallback:', e);
-                    generatedText += '\n' + '[Error: generation failed]';
+                    console.error('Inference execution error:', e);
+                    generatedText += '\n' + `[Error: ${e.message || 'generation failed'}]`;
                 }
             })();
 

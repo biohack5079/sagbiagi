@@ -5,7 +5,17 @@ import { pipeline, env, RawImage, TextStreamer } from "https://cdn.jsdelivr.net/
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
-env.useOriginPrivateFileSystem = true;
+// Gemma 2 2B 等の複数ファイルに分かれたモデル (.onnx + .onnx_data) を読み込む際、
+// OPFS (Origin Private File System) を有効にしていると WASM 側でのマウントエラー 
+// (Module.MountedFiles is not available) が発生しやすいため、安定性を重視して 
+// 標準の Browser Cache (Cache Storage API) を使用します。
+// 容量（クォータ）の上限は Cache API も OPFS も共通です。
+env.useOriginPrivateFileSystem = false;
+
+// Web Worker内部でさらにプロキシWorkerを起動しようとすると、外部重みファイル（.onnx_data）の
+// 読み込み（マウント）に失敗し「Module.MountedFiles is not available」が発生することがあります。
+env.backends.onnx.wasm.proxy = false;
+
 // CPU(WASM)で動かす場合のスレッド数を最適化
 env.backends.onnx.wasm.numThreads = 1; // single-threaded to work without crossOriginIsolated
 
@@ -33,7 +43,8 @@ async function initGenerator(task, modelId, device, token = null) {
     currentGeneratorModelId = modelId;
     const options = {
         device: device,
-        dtype: device === 'webgpu' ? 'q4f16' : 'q4',
+        // Gemma 2シリーズはonnx-communityにてq4f16形式で提供されているため、CPU実行時もq4f16を指定する
+        dtype: (device === 'webgpu' || modelId.toLowerCase().includes('gemma')) ? 'q4f16' : 'q4',
         token: token,
         progress_callback: (x) => {
             if (x.status === 'download') {
@@ -142,12 +153,7 @@ self.onmessage = async (e) => {
                     console.error('Model load failed:', e);
                     throw e;
                 }
-
-                // 予期せぬエラーの場合は、フォールバックせずにそのままエラーを投げる
-                console.error('Model load failed:', e);
-                throw e;
             }
-
             postMessage({ status: 'loading', output: `推論中... (${currentDevice.toUpperCase()})` });
 
             let inputs;

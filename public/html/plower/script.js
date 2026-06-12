@@ -59,6 +59,27 @@ async function saveDocumentToOPFS(name, content) {
     }
 }
 
+// WebGPUモデルのキャッシュをクリアする関数
+async function clearWebGpuModelCache() {
+    const msgConfirm = isEn
+        ? "Are you sure you want to delete all WebGPU model caches?\n(This will force models to be re-downloaded.)"
+        : "本当にWebGPUモデルのキャッシュを全て削除しますか？\n（この操作は元に戻せません。モデルは次回使用時に再ダウンロードされます。）";
+    if (confirm(msgConfirm)) {
+        try {
+            const cacheName = 'transformers-cache'; // @huggingface/transformersのデフォルトキャッシュ名
+            const deleted = await caches.delete(cacheName);
+            if (deleted) {
+                alert(isEn ? "WebGPU model cache cleared successfully." : "WebGPUモデルのキャッシュを削除しました。");
+            } else {
+                alert(isEn ? "WebGPU model cache not found or already empty." : "WebGPUモデルのキャッシュが見つからないか、既に空でした。");
+            }
+        } catch (e) {
+            console.error("Failed to clear WebGPU model cache:", e);
+            alert(isEn ? "An error occurred while clearing cache." : "キャッシュの削除中にエラーが発生しました。");
+        }
+    }
+}
+
 // --- OPFSからの文書ロードとファイル一覧の表示 ---
 async function loadDocuments() {
     try {
@@ -1191,7 +1212,7 @@ async function sendToModel() {
     if (isGpt2) {
         // GPT-2(Baseモデル)用のシンプルなプロンプト。
         // 指示を理解できないため、直感的に「続きを書かせる」形式にする。
-        prompt = `Context: ${context}\n\nQuestion: ${userInput}\nAnswer:`;
+        prompt = `Context: ${context}\n\nQuestion: ${userInput}\nAnswer: ${isEn ? '' : '日本語で回答してください。'}`;
     } else {
         // Qwen/Llama/Gemini等のInstructモデル用。
         prompt = `### System Instructions
@@ -1321,6 +1342,18 @@ async function sendToModel() {
 
 // --- 初期化とイベントリスナー設定 ---
 document.addEventListener('DOMContentLoaded', () => {
+    // ストレージの空き容量を確認（ユーザーの不安解消用）
+    if (navigator.storage && navigator.storage.estimate) {
+        navigator.storage.estimate().then(estimate => {
+            const used = (estimate.usage / 1024 / 1024 / 1024).toFixed(2);
+            const quota = (estimate.quota / 1024 / 1024 / 1024).toFixed(2);
+            console.log(`[Storage] Used: ${used} GB / Quota: ${quota} GB`);
+            if (estimate.quota < 2 * 1024 * 1024 * 1024) {
+                console.warn("Storage quota is low. Large models like Gemma may fail.");
+            }
+        });
+    }
+
     // --- ブックマークレットのURLを現在の環境（localhostか公開URLか）に合わせて動的に更新 ---
     const bookmarkletLink = document.getElementById('bookmarkletLink');
     if (bookmarkletLink) {
@@ -1351,6 +1384,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSystemPrompt(); // システムプロンプトの事前読み込み
     document.getElementById('sendButton').addEventListener('click', sendToModel);
     document.getElementById('resetDocsButton').addEventListener('click', resetDocuments);
+    document.getElementById('clearWebGpuCacheButton').addEventListener('click', clearWebGpuModelCache);
+    document.getElementById('clearWebGpuCacheButton').addEventListener('click', clearWebGpuModelCache);
     document.getElementById('saveOcrButton').addEventListener('click', saveOcrTextAsFile);
     document.getElementById('syncFolderButton').addEventListener('click', syncLocalFolder);
     

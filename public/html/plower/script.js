@@ -1172,12 +1172,13 @@ async function sendToModel() {
     }
     let context = contextParts.join('\n\n');
     
-    // CPU推論 (GPT-2) はトークン上限が1024のため、コンテキストを大幅に制限する
-    // GPT-2: プロンプトテンプレート自体が~100トークン、質問が~50トークンを占めるため
-    // コンテキストは300文字程度に抑える必要がある (日本語は1文字≒2-3トークン)
     const isCpuCapsule = modelSelect.startsWith('webgpu');
-    // ブラウザ推論(WebGPU/WASM)はメモリ制限があるため、コンテキストを適度に制限する (2000文字程度)
-    const maxContextChars = isCpuCapsule ? 3000 : 15000;
+    const isGpt2 = modelSelect.includes('gpt2');
+
+    // GPT-2: 物理的な上限が1024トークンと非常に小さいため、日本語では数百文字が限界。
+    // 他のWebGPUモデル(Qwen/Llama)もブラウザのメモリ節約のため、適度に制限。
+    const maxContextChars = isGpt2 ? 500 : (isCpuCapsule ? 2500 : 15000);
+
     context = context.slice(0, maxContextChars);
 
     // UIステータス表示の改善（回答エリアの初期化）

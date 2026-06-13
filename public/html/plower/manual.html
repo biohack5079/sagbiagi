@@ -59,13 +59,19 @@
             <h2 id="srcTitle">2. RAGソースの設定</h2>
             <ul>
                 <li id="srcUpload"><strong>アップロード:</strong> 「RAGソース」からローカルのテキストファイルを選択します。</li>
-                <li id="srcSync"><strong>同期:</strong> 「ローカルフォルダ同期」でディレクトリを自動追跡します（Chrome/Edgeのみ）。</li>
+                <li id="srcSync"><strong>同期:</strong> 「ローカルフォルダ同期」はWindows（PC版Chrome/Edge）向けの機能です。ローカルの特定のフォルダをRAGソースの置き場として自動同期します。</li>
+                <li id="srcBookmarklet"><strong>ブラウザ連携:</strong> 「ブラウザ連携」リンクをブックマークバーにドラッグ＆ドロップして登録しておくと、今見ているウェブサイトをスキャンしてRAGソースに即座に追加できます。</li>
                 <li id="srcOcr"><strong>画像:</strong> テキストエリアに画像を貼り付けると、LLMのマルチモーダル解析用コンテキストとして認識されます。</li>
             </ul>
         </div>
 
         <div class="section">
-            <h2 id="qTitle">3. 質問する</h2>
+            <h2 id="storageTitle">3. ストレージと永続化</h2>
+            <p id="storageDesc">「永続化」ボタンを押してブラウザのストレージ制限を解除（永続化を許可）すると、GemmaやLlamaといった巨大なモデルを安定して利用できるようになります。許可されない場合は、<code>chrome://site-engagement/</code> を開き、サイトの信頼スコアが十分か確認してください。</p>
+        </div>
+
+        <div class="section">
+            <h2 id="qTitle">4. 質問する</h2>
             <p id="qDesc">質問を入力して送信します。Plowerは読み込まれたすべての文書をコンテキストとして送信します。モデルは提供された情報に基づいて回答します。</p>
         </div>
 
@@ -88,9 +94,12 @@
                 hfStep5: 'Enter your Space URL into the "HF / Ollama URL" field in Plower.',
                 srcTitle: '2. Document Sources',
                 srcUpload: '<strong>Upload:</strong> Click "Choose Files" to add local text files.',
-                srcSync: '<strong>Sync:</strong> Use "Sync Local Folder" to track a directory automatically (Chrome/Edge only).',
-                srcOcr: '<strong>Images:</strong> Paste an image directly into the text area to use it for multimodal LLM analysis.',
-                qTitle: '3. Asking Questions',
+                srcSync: '<strong>Sync:</strong> "Sync Local Folder" is currently for Windows (PC Chrome/Edge). It automatically syncs a specific local folder as your RAG source.',
+                srcBookmarklet: '<strong>Browser Link:</strong> Drag and drop the "Browser Link" to your bookmark bar. You can then scan the page you are viewing and add it to RAG sources instantly.',
+                srcOcr: '<strong>Images:</strong> Paste an image to use it as multimodal context for LLM analysis.',
+                storageTitle: '3. Storage & Persistence',
+                storageDesc: 'The "Persistence" button can expand browser storage, enabling large models like Gemma or Llama. If denied, check your score at <code>chrome://site-engagement/</code>.',
+                qTitle: '4. Asking Questions',
                 qDesc: 'Enter your question in the box. Plower sends all loaded documents as context. The model will answer based <em>only</em> on those documents.'
             };
 
@@ -109,7 +118,10 @@
             document.getElementById('srcTitle').textContent = t.srcTitle;
             document.getElementById('srcUpload').innerHTML = t.srcUpload;
             document.getElementById('srcSync').innerHTML = t.srcSync;
+            document.getElementById('srcBookmarklet').innerHTML = t.srcBookmarklet;
             document.getElementById('srcOcr').innerHTML = t.srcOcr;
+            document.getElementById('storageTitle').textContent = t.storageTitle;
+            document.getElementById('storageDesc').innerHTML = t.storageDesc;
             document.getElementById('qTitle').textContent = t.qTitle;
             document.getElementById('qDesc').textContent = t.qDesc;
         }

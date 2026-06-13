@@ -8,7 +8,7 @@
 </head>
 
 <body>
-    <h1><span id="titleText">ローカル情報を掘り起こすAIショベル「プローワー」。</span></h1>
+    <h1><span id="titleText">プローワー</span></h1>
     <div id="statusBar" class="status-bar">
         <a href="manual.html" id="manualLink" class="status-link">[使い方説明書]</a>
         <a id="bookmarkletLink" href="#" 
@@ -64,12 +64,12 @@
 
     <label for="modelSelect">モデル選択:</label>
     <select id="modelSelect">
+        <option value="gemma3:4b-it-q4_K_M">Gemma 4B (ローカル)</option>
         <option value="gemma:7b">Gemma 7B (ローカル)</option>
-        <option value="gpt-oss:20b">GPT-OSS 20B (ローカル)</option>
         <option value="gemma3:12b">Gemma 12B (ローカル)</option>
+        <option value="gpt-oss:20b">GPT-OSS 20B (ローカル)</option>
         <option value="gpt-oss:120b">GPT-OSS 120B (ローカル)</option>
         <option value="sarasina">Sarasina (SoftBank/local)</option>
-        <option value="gemma3:4b-it-q4_K_M">Gemma 3 4B (HF Space / Ollama)</option>
         <option value="webgpu:onnx-community/Qwen2.5-0.5B-Instruct" selected>WebGPU: Qwen 2.5 0.5B (安定版)</option>
         <option value="webgpu:onnx-community/Llama-3.2-1B-Instruct">WebGPU: Llama 3.2 1B (高精度)</option>
         <option value="webgpu:onnx-community/gemma-2-2b-jpn-it">WebGPU: Gemma 2 2B (Google)</option>

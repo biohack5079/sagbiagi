@@ -1,3 +1,9 @@
+// 汎用エスケープ関数
+const esc = (str) => {
+    const text = (typeof str === 'object') ? JSON.stringify(str) : String(str);
+    return text.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m]));
+};
+
 // 永続化された文書のメタデータ（ファイル名）のみを格納
 let persistentDocuments = [];
 
@@ -151,8 +157,16 @@ async function loadDocuments() {
             const used = (usedGB < 0 || usedGB > 1000) ? "Fatal" : usedGB.toFixed(2);
             // クォータが10GB程度で止まっている場合は一時ストレージ制限を受けています
             const hasGpu = !!navigator.gpu;
-            const storageText = `[Storage] Used: ${used} GB / Quota: ${quota} GB (Persisted: ${persisted}) | Isolated: ${isIsolated} | WebGPU: ${hasGpu}`;
-            console.log(storageText);
+            
+            console.log(`[Storage] Status Check:`);
+            console.table({
+                "Used (GB)": used,
+                "Quota (GB)": quota,
+                "Persisted": persisted,
+                "Isolated": isIsolated,
+                "WebGPU": hasGpu,
+                "Environment": navigator.userAgent.includes("Snap") ? "Ubuntu Snap (Restricted)" : "Standard"
+            });
 
             // UIにストレージ情報を表示（もし要素があれば）
             const storageInfoEl = document.getElementById('storageInfo');
@@ -169,13 +183,16 @@ async function loadDocuments() {
             const targetEl = document.getElementById('storageInfo');
             if (targetEl) {
                 const isolationLabel = isIsolated ? (isEn ? '🛡️Isolated' : '🛡️隔離ON') : (isEn ? '🔓Non-Isolated' : '🔓隔離OFF');
-                targetEl.innerHTML = `容量: ${used}/${quota}GB ${persisted ? '✅永続化済' : '⚠️一時的'} | ${isolationLabel}`;
+                const isHighUsage = (used / quota) > 0.8;
+                const usageColor = isHighUsage ? '#d32f2f' : (persisted ? '#2e7d32' : '#666');
+                targetEl.innerHTML = `容量: <span style="color:${usageColor}; font-weight:bold;">${used}/${quota}GB</span> ${persisted ? '✅永続化済' : '⚠️一時的'} | ${isolationLabel}`;
 
                 // 永続化リクエストボタンの追加
-                if (!persisted) {
+                if (!persisted && !document.getElementById('persistBtn')) {
                     const btn = document.createElement('button');
-                    btn.textContent = isEn ? 'Unlock Disk Space (Request Persistence)' : 'ディスク容量を解放 (永続化リクエスト)';
-                    btn.style.cssText = 'display:inline-block; margin-left:8px; background:#d32f2f; color:white; border:none; border-radius:4px; padding:2px 8px; cursor:pointer; font-size:0.9em; vertical-align:middle; font-weight:bold;';
+                    btn.id = 'persistBtn';
+                    btn.textContent = isEn ? 'Unlock Storage' : '永続化';
+                    btn.style.cssText = 'display:inline-flex; align-items:center; margin-left:8px; background:#d32f2f; color:white; border:none; border-radius:4px; padding:0 8px; cursor:pointer; font-size:11px; height:24px; vertical-align:middle; font-weight:bold;';
                     
                     btn.onmouseover = () => btn.style.background = '#b71c1c';
                     btn.onmouseout = () => btn.style.background = '#d32f2f';
@@ -189,11 +206,15 @@ async function loadDocuments() {
                                 alert(isEn ? "Persistence enabled! Reloading to apply large quota..." : "永続化が許可されました！クォータ拡大のためリロードします。");
                                 location.reload();
                             } else {
-                                const msg = isEn 
-                                    ? "Chrome denied the request (Site Engagement Score too low).\n\nHow to fix:\n1. BOOKMARK this page (critical for Chrome).\n2. Click buttons and interact with the page for 1 minute.\n3. Or, click the 'Install' icon in the address bar to run as an App.\n4. Then, click this button again."
-                                    : "Chromeによって拒否されました（サイトの信頼スコアが不足しています）。\n\n【解決策】\n1. このページを「ブックマーク」してください。\n2. 数分間、ページ内で操作（ボタンクリックや入力等）を行ってください。\n3. 可能であれば、アドレスバー右端の「インストール」アイコンからアプリ化してください（即座に許可されます）。\n4. その後、もう一度このボタンを押してください。";
-                                alert(msg);
-                                console.info("Check your engagement score at: chrome://site-engagement/");
+                                const score = "chrome://site-engagement/";
+                                const msg = isEn
+                                    ? `Chrome denied the request even with high score.\n\n【Ubuntu/Snap Problem】\nIf score is high but still denied, the "Snap" version of Chrome is likely blocking it. \n\nSolution: Install the official ".deb" version from Google's site instead of Snap.\nAlso try: Bookmark this page and Reload.`
+                                    : `スコアが十分（100など）なのに拒否されました。これはUbuntuのSnap版Chrome特有の制限である可能性が高いです。\n\n【解決策】\n1. Ubuntuの「Snap版」Chromeではなく、Google公式サイトから「.deb版」をダウンロードしてインストールしてください。Snap版はセキュリティ隔離が厳しく、永続化が通らないことがよくあります。\n2. このページをブックマークし、一度リロードしてから再試行してください。`;
+                                
+                                if (confirm(msg + (isEn ? "\n\nCopy score URL to clipboard?" : "\n\nスコア確認用URLをクリップボードにコピーしますか？"))) {
+                                    navigator.clipboard.writeText(score);
+                                }
+                                console.info(`Check your engagement score at: ${score}`);
                             }
                         } catch (err) {
                             console.error("Persistence request error:", err);
@@ -201,14 +222,13 @@ async function loadDocuments() {
                     };
                     targetEl.appendChild(btn);
                 }
-
-                targetEl.style.color = persisted ? '#2e7d32' : '#d32f2f';
                 targetEl.title = persisted ? "ブラウザから削除されにくい設定です" : "容量制限が厳しく、ブラウザの判断で削除される可能性があります。";
             }
 
             // 20GB未満、または永続化されていない場合に警告 (Gemma 2等の巨大モデル用)
             if (estimate.quota < 20 * 1024 * 1024 * 1024 && !persisted) {
-                console.warn(`[Storage] Chrome has restricted quota to ${quota}GB. Click 'Enable Persistence' to unlock full disk space.`);
+                const scoreUrl = "chrome://site-engagement/";
+                console.warn(`[Storage] Chrome has restricted quota to ${quota}GB.\nPossible Reasons:\n1. Site Engagement Score < 4.1 (Current check: ${scoreUrl})\n2. Ubuntu Snap environment restriction.\n3. OS disk space is low.\nRecommended: Use 'localhost' and official Chrome .deb version.`);
             }
         });
     }
@@ -217,7 +237,13 @@ async function loadDocuments() {
         persistentDocuments = [];
         for await (const entry of ragDir.values()) {
             if (entry.kind === 'file') {
-                persistentDocuments.push({ name: entry.name });
+                try {
+                    // ファイルの実体にアクセス可能か検証（幽霊ファイルを排除）
+                    await ragDir.getFileHandle(entry.name);
+                    persistentDocuments.push({ name: entry.name });
+                } catch (e) {
+                    console.warn(`Cleaned up stale file handle: ${entry.name}`);
+                }
             }
         }
         updateFileListDisplay();
@@ -1104,7 +1130,7 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
         
         if (!response.ok) throw new Error(`Sarasina Error: ${response.statusText}`);
         const json = await response.json();
-        result = json.response || json.detail || "";
+        result = String(json.response || (typeof json.detail === 'object' ? JSON.stringify(json.detail) : json.detail) || "");
         if (onChunk) onChunk(result);
         return result;
 
@@ -1260,9 +1286,6 @@ async function sendToModel() {
         alert(isEn ? "Please enter a question." : "質問を入力してください。");
         return;
     }
-
-    // HTMLエスケープ関数 (スコープエラー防止のためここで定義)
-    const esc = (str) => String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m]));
 
     isSending = true;
     sendButton.disabled = true;
@@ -1573,8 +1596,11 @@ document.addEventListener('DOMContentLoaded', () => {
         requestPersist();
 
         // ユーザーがUIを触ったときにもう一度リクエスト（ブラウザはユーザー操作に伴うリクエストを承認しやすいため）
-        document.addEventListener('click', () => {
-            if (!navigator.storage.persisted || !navigator.storage.persisted()) requestPersist();
+        document.addEventListener('click', async () => {
+            if (navigator.storage && navigator.storage.persisted) {
+                const isAlreadyPersisted = await navigator.storage.persisted();
+                if (!isAlreadyPersisted) requestPersist();
+            }
         }, { once: true });
     }
 

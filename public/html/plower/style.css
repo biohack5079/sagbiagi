@@ -9,13 +9,15 @@ h1 {
     margin-bottom: 10px;
 }
 
-/* ステータスバー（リンクと容量情報） */
+/* ステータスバー（2段目: リンクと容量情報、永続化ボタン） */
 .status-bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 15px;
-    margin-bottom: 15px;
+    margin-top: 5px;
+    margin-bottom: 5px;
+    padding: 0 5px;
     font-size: 0.9em;
 }
 
@@ -40,12 +42,12 @@ h1 {
     cursor: move; /* ドラッグ可能であることを示す */
 }
 
-/* --- RAGコントロールヘッダーの修正スタイル (レイアウト崩れ対策) --- */
+/* --- RAGコントロールヘッダー（3段目） --- */
 .rag-controls-header {
-    display: flex; /* 要素を横並びにする */
+    display: flex;
     flex-wrap: wrap; /* 幅が足りない場合に改行を許可 */
-    align-items: center; /* 垂直方向の中央揃え */
-    gap: 8px; 
+    align-items: center; /* 要素の垂直方向を中央で揃える */
+    gap: 10px; 
     margin-top: 20px; /* H1からの間隔を確保 */
     margin-bottom: 20px; /* 次のセクションとの間隔 */
     padding: 10px;
@@ -59,6 +61,7 @@ h1 {
 .rag-controls-header label {
     margin: 0;
     white-space: nowrap;
+    vertical-align: middle;
 }
 
 /* ファイル入力のスタイル調整 */
@@ -179,7 +182,7 @@ button {
     margin: 0;
     height: 40px;
     min-width: max-content; /* 改行を物理的に阻止 */
-    font-size: 13px;
+    font-size: 14px;
     font-weight: bold;
     display: inline-flex;
     align-items: center;
@@ -190,6 +193,12 @@ button {
     padding: 0 8px; /* パディングを詰めて横幅を節約 */
     flex-shrink: 0; /* 圧縮を防止 */
 }
+
+/* 特定のボタンの高さ微調整（もしズレる場合） */
+#clearWebGpuCacheButton {
+    vertical-align: middle;
+}
+
 
 #resetDocsButton {
     background-color: #dc3545; /* 赤色 */

@@ -116,11 +116,11 @@ self.onmessage = async (e) => {
             const task = isVLM ? 'image-to-text' : 'text-generation';
             let useVision = !!image && isVLM;
 
-            let warningPrefix = "";
+            let warning = "";
             if (image && currentDevice === 'wasm') {
-                warningPrefix = "⚠️ WebGPUがオフ（または未対応）のため、CPU(WASM)で画像解析を実行します。完了まで非常に時間がかかる可能性があります。\n\n";
+                warning = "⚠️ WebGPU未対応のため、CPU(WASM)で画像解析を実行します。非常に時間がかかります。";
             } else if (currentDevice === 'wasm') {
-                warningPrefix = "⚠️ WebGPUが未対応のため、CPU(WASM)で実行します。推論に時間がかかります。\n\n";
+                warning = "⚠️ WebGPU未対応のため、CPU(WASM)で実行します。推論に時間がかかります。";
             }
 
             let generator;
@@ -135,7 +135,7 @@ self.onmessage = async (e) => {
                 generatorPromise = null;
                 currentGeneratorModelId = null;
 
-                let errorMsg = e.message || '';
+                const errorMsg = String(e); // e.message だけでなく Error 全体を文字列化して判定
                 const isAuthError = /401|403|404|unauthorized|forbidden|credentials|not found/i.test(errorMsg);
                 
                 // 技術的なセッション作成失敗（MountedFilesなど）
@@ -151,16 +151,12 @@ self.onmessage = async (e) => {
                     postMessage({ status: 'auth_error', modelId: modelId, error: errorMsg, isTechnical: true });
                     return;
                 } else {
-                    // メモリ不足やストレージ（OPFS）関連のエラーかどうかを判定
-                    const isResourceError = /memory|quota|allocation|out of|buffer/i.test(errorMsg);
-                    
-                    if (isResourceError) {
-                        const detail = `[ストレージ/メモリ上限] OPFS(ブラウザ保存)またはGPUメモリの空きが足りません。\n・PCの空き容量を確認してください。\n・ブラウザの他タブ(YouTube等)を閉じてください。\n(詳細: ${errorMsg})`;
-                        postMessage({ status: 'error', error: detail });
-                        return;
-                    }
-                    if (errorMsg.includes('QuotaExceededError') || errorMsg.includes('cache')) {
-                        const detail = `[キャッシュ容量不足] ブラウザのストレージ制限に達しました。「WebGPUモデルキャッシュをクリア」を実行して空き容量を確保してください。`;
+                    const isQuotaError = errorMsg.includes('quota') || 
+                                       errorMsg.includes('QuotaExceededError') || 
+                                       errorMsg.includes('1588752864') ||
+                                       errorMsg.includes('DataError');
+                    if (isQuotaError) {
+                        const detail = `[キャッシュ容量不足/破損] モデルの保存または読み込みに失敗しました。容量制限（通常2GB）に達した可能性があります。「WebGPUモデルキャッシュをクリア」を実行してください。`;
                         postMessage({ status: 'error', error: detail });
                         return;
                     }
@@ -197,7 +193,7 @@ self.onmessage = async (e) => {
             } else {
                 // テキストのみのフォーマット
                 const messages = [
-                    { role: "system", content: "You are a helpful assistant. Respond using the language requested in the user's prompt instructions. If no specific language is mentioned or supported, default to English." },
+                    { role: "system", content: "You are a concise AI assistant. Answer only what is asked using the provided context." },
                     { role: "user", content: prompt }
                 ];
                 let formattedPrompt;
@@ -232,7 +228,7 @@ self.onmessage = async (e) => {
                 maxNewTokens = 1024;
             }
 
-            let generatedText = warningPrefix;
+            let generatedText = "";
             let tokenCount = 0;
             const inferStartTime = Date.now();
 
@@ -245,13 +241,13 @@ self.onmessage = async (e) => {
                     const elapsed = ((Date.now() - inferStartTime) / 1000).toFixed(1);
                     generatedText += text;
                     // 進捗付きでUIに送る
-                    postMessage({ status: 'chunk', output: generatedText, tokenCount, elapsed, maxTokens: maxNewTokens });
+                    postMessage({ status: 'chunk', output: generatedText, tokenCount, elapsed, maxTokens: maxNewTokens, warning });
                 }
             });
 
             // CPU(WASM)用: 推論開始前に進捗ヘッダーを表示
             if (isTinyFallback) {
-                postMessage({ status: 'chunk', output: generatedText + `\n⏳ CPU推論開始 (1024トークンを使用予定、じっくり推論します)...`, tokenCount: 0, elapsed: '0', maxTokens: maxNewTokens });
+                postMessage({ status: 'chunk', output: "", tokenCount: 0, elapsed: '0', maxTokens: maxNewTokens, warning });
             }
 
             // Run inference – タイムアウト付き
@@ -268,7 +264,8 @@ self.onmessage = async (e) => {
                     await generator(inputs, genConfig);
                 } catch (e) {
                     console.error('Inference execution error:', e);
-                    generatedText += '\n' + `[Error: ${e.message || 'generation failed'}]`;
+                    const errDetail = String(e).includes('1588752864') ? 'Quota Exceeded (Memory/Disk Full)' : (e.message || 'generation failed');
+                    generatedText += '\n' + `[Error: ${errDetail}]`;
                 }
             })();
 
@@ -277,7 +274,7 @@ self.onmessage = async (e) => {
                 // ハートビート: 5秒ごとにUI側に経過時間を通知（フリーズと誤解されないように）
                 const heartbeat = setInterval(() => {
                     const elapsed = ((Date.now() - inferStartTime) / 1000).toFixed(0);
-                    postMessage({ status: 'heartbeat', elapsed, tokenCount, maxTokens: maxNewTokens });
+                    postMessage({ status: 'heartbeat', elapsed, tokenCount, maxTokens: maxNewTokens, warning });
                 }, 5000);
 
                 const timeoutPromise = new Promise((_, reject) =>
@@ -289,8 +286,8 @@ self.onmessage = async (e) => {
                     if (e.message === 'CPU_TIMEOUT') {
                         const elapsed = ((Date.now() - inferStartTime) / 1000).toFixed(0);
                         console.warn('CPU inference timed out after', elapsed, 's');
-                        if (!generatedText || generatedText === warningPrefix) {
-                            generatedText += `⏱️ CPU推論が${elapsed}秒でタイムアウトしました。質問を短くするか、Gemini APIをお使いください。`;
+                        if (!generatedText) {
+                            generatedText = `⏱️ CPU推論が${elapsed}秒でタイムアウトしました。質問を短くするか、Gemini APIをお使いください。`;
                         } else {
                             generatedText += `\n\n⏱️ (${elapsed}秒経過、タイムアウトにより途中で打ち切られました)`;
                         }
@@ -305,7 +302,7 @@ self.onmessage = async (e) => {
             }
             // If model produced no text, send a fallback message
             if (!generatedText.trim()) {
-                generatedText = warningPrefix + '回答が生成できませんでした。';
+                generatedText = '回答が生成できませんでした。';
             }
 
             postMessage({ status: 'complete', output: generatedText.trim() });

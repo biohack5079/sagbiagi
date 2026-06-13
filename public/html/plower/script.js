@@ -34,6 +34,7 @@ async function getRagDir() {
 
 // 指定したファイルの内容をOPFSから読み込む
 async function getDocumentContent(name) {
+    if (name === '貼付けテキスト(一時)') return "";
     try {
         const ragDir = await getRagDir();
         const fileHandle = await ragDir.getFileHandle(name);
@@ -67,22 +68,36 @@ async function clearWebGpuModelCache() {
     if (confirm(msgConfirm)) {
         try {
             console.log("Starting WebGPU cache clear...");
-            const cacheName = 'transformers-cache'; // @huggingface/transformersのデフォルトキャッシュ名
-            const deleted = await caches.delete(cacheName);
             
-            // OPFS (Origin Private File System) のクリーンアップ
+            // 1. すべての Cache API を走査して削除
+            const cacheKeys = await caches.keys();
+            for (const key of cacheKeys) {
+                if (key.includes('transformers') || key.includes('onnx')) {
+                    console.log(`Deleting cache: ${key}`);
+                    await caches.delete(key);
+                }
+            }
+            
+            // 2. OPFS (Origin Private File System) のクリーンアップ
             try {
                 const root = await navigator.storage.getDirectory();
-                await root.removeEntry('onnx', { recursive: true });
+                // rag_sources 以外（モデルキャッシュ）をすべて消去
+                for await (const entry of root.values()) {
+                    if (entry.kind === 'directory' && entry.name !== 'rag_sources') {
+                        console.log(`Deleting OPFS dir: ${entry.name}`);
+                        await root.removeEntry(entry.name, { recursive: true });
+                    }
+                }
             } catch (err) {
-                console.log("OPFS 'onnx' directory not found or already clear.");
+                console.log("OPFS cleanup skipped or already clear.");
             }
 
-            // IndexedDB (ONNX Runtime 内部で使用される場合がある) の削除
+            // 3. 全ての IndexedDB の削除を試行 (ONNX Runtime / Transformers.js 用)
             try {
                 const dbs = await indexedDB.databases();
                 for (const dbInfo of dbs) {
-                    if (dbInfo.name.includes('onnx') || dbInfo.name.includes('transformers')) {
+                    if (dbInfo.name.includes('onnx') || dbInfo.name.includes('transformers') || dbInfo.name.includes('ort')) {
+                        console.log(`Deleting IDB: ${dbInfo.name}`);
                         indexedDB.deleteDatabase(dbInfo.name);
                     }
                 }
@@ -1009,19 +1024,13 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
         return new Promise((resolve, reject) => {
             let lastOutput = '';
             const onMessage = (e) => {
-                const { status, output, error, tokenCount, elapsed, maxTokens, modelId } = e.data;
+                const { status, output, error, tokenCount, elapsed, maxTokens, modelId, warning } = e.data;
                 if (status === 'error') {
                     window.capsuleWorker.removeEventListener('message', onMessage);
                     reject(new Error(error));
                 } else if (status === 'chunk') {
                     lastOutput = output;
-                    if (onChunk) {
-                        let display = output;
-                        if (tokenCount !== undefined && maxTokens) {
-                            display += `\n\n<span style="color:#888; font-size:0.85em;">[CPU推論中: ${tokenCount}/${maxTokens} トークン (${elapsed}秒)]</span>`;
-                        }
-                        onChunk(display);
-                    }
+                    if (onChunk) onChunk(output, { tokenCount, elapsed, maxTokens, warning });
                 } else if (status === 'heartbeat') {
                     if (onChunk) {
                         let display = lastOutput + `\n\n<span style="color:#888; font-size:0.85em;">[CPU推論中... 応答を待っています (${elapsed}秒経過)]</span>`;
@@ -1153,10 +1162,17 @@ async function sendToModel() {
         return;
     }
 
+    // HTMLエスケープ関数 (スコープエラー防止のためここで定義)
+    const esc = (str) => String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m]));
+
     isSending = true;
     sendButton.disabled = true;
     sendButton.textContent = isEn ? 'Sending...' : '送信中...';
-    chatLog.innerHTML += `<p><strong>${isEn ? 'Question' : '質問'}:</strong> ${userInput}</p>`;
+
+    const questionParagraph = document.createElement('p');
+    questionParagraph.innerHTML = `<strong>${isEn ? 'Question' : '質問'}:</strong> ${esc(userInput)}`;
+    chatLog.appendChild(questionParagraph);
+
     const responseParagraph = document.createElement('p');
     responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> (${isEn ? 'Processing...' : '処理中...'})`;
     chatLog.appendChild(responseParagraph);
@@ -1236,45 +1252,66 @@ async function sendToModel() {
     const systemPrompt = systemPromptCache || "You are a world-class coding assistant.";
 
     // プロンプトの生成: LlamaやQwenなど高性能モデル用に詳細な指示を含める
+    // 指示が多すぎると軽量モデル(Qwen 0.5B)が混乱するため、構造を簡潔にします
     let prompt;
     if (isGpt2) {
         // GPT-2(Baseモデル)用のシンプルなプロンプト。
-        // 指示語や特定の書き出しを与えるとオウム返ししやすいため、Answerタグのみで生成を開始させます。
         prompt = `Context: ${context}\n\nQuestion: ${userInput}\n\nAnswer:`;
     } else {
-        // Qwen/Llama/Gemini等のInstructモデル用。
-        prompt = `### System Instructions
-        ${systemPrompt}
-        
-        ### Reference Documents (Context)
-        ${context}
-        
-        ---
-        ### User Question
-        ${userInput}
+        // Instructモデル用: プロンプト自体に「System Instructions」という見出しを付けない（ロール分離に任せる）
+        prompt = `
+<Context>
+${context}
+</Context>
+
+<UserQuestion>
+${userInput}
+</UserQuestion>
+
+Please answer the question based on the context provided above.
         
         ---
         ### Final Instruction:
         ${languageSuffix}
-        Strictly output ONLY the answer to the question. Do not include project headers or "About" sections.`;
+        Strictly output ONLY the answer to the question based on the provided context.
+        Be extremely precise: Copy numeric values, codes, and identifiers EXACTLY as they appear in the context.
+        Do NOT output any HTML tags, CSS, JavaScript, or source code snippets unless explicitly requested.`;
     }
+    
+    // スクロールを最下部へ移動させるヘルパー
+    const scrollToBottom = () => {
+        // 1. ズーム時に入力欄に被らないよう、一時的に大きな余白を作る
+        document.body.style.paddingBottom = "40vh";
+
+        // 2. 回答エリアが画面の中央〜下部に来るように調整
+        responseParagraph.scrollIntoView({ behavior: 'auto', block: 'center' });
+
+        // 3. 全体のスクロール位置を調整（保険）
+        requestAnimationFrame(() => {
+            window.scrollTo(0, document.body.scrollHeight);
+        });
+    };
 
     // --- 回答生成 ---
     try {
         // 共通関数を使ってリクエスト
-        const finalResult = await performLlmRequest(modelSelect, prompt, geminiApiKey, (chunkText) => {
+        const finalResult = await performLlmRequest(modelSelect, prompt, geminiApiKey, (chunkText, meta = {}) => {
             // ストリーミング更新
-            // ステータスメッセージを分離して表示
-            let statusHtml = "";
-            if (isCpuCapsule) {
-                statusHtml = `<br><small style="color:#888;">[${isEn ? 'WASM/CPU Inference' : 'WASM/CPU推論実行中'}]</small>`;
+            const warningHtml = meta.warning ? `<div style="color:#d32f2f; background:#fff1f0; padding:8px; border-radius:4px; margin-bottom:8px; font-size:0.9em; border:1px solid #ffa39e;">${meta.warning.replace(/\n/g, '<br>')}</div>` : "";
+            
+            let metaHtml = "";
+            if (meta.tokenCount !== undefined) {
+                metaHtml = `<br><small style="color:#888;">[${isEn ? 'CPU Inferring' : 'CPU推論中'}: ${meta.tokenCount}/${meta.maxTokens} (${meta.elapsed}s)]</small>`;
+            } else if (isCpuCapsule && !meta.warning) {
+                metaHtml = `<br><small style="color:#888;">[${isEn ? 'WASM/CPU Inference' : 'WASM/CPU推論実行中'}]</small>`;
             }
-            responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${chunkText.replace(/\n/g, '<br>')}${statusHtml}`;
-            chatLog.scrollTop = chatLog.scrollHeight;
+            responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong><br>${warningHtml}${esc(chunkText).replace(/\n/g, '<br>')}<div style="height:10px;"></div>${metaHtml}`;
+            scrollToBottom();
         }, imageDataToSend);
 
         // 最終結果の表示 (非ストリーミングモデル用)
-        responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ${finalResult.replace(/\n/g, '<br>')}`;
+        const warningHtmlFinal = responseParagraph.querySelector('div[style*="color:#d32f2f"]') ? responseParagraph.querySelector('div[style*="color:#d32f2f"]').outerHTML : "";
+        responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong><br>${warningHtmlFinal}${esc(finalResult).replace(/\n/g, '<br>')}`;
         
         // 「RAGソースに加える」ボタンの追加
         const saveChatBtn = document.createElement('button');
@@ -1337,34 +1374,34 @@ async function sendToModel() {
         userInputElement.value = ''; // 質問欄をクリア
 
     } catch (error) {
-        let errorMsg = error.message;
+        // 生のエラーメッセージのみを先にエスケープする
+        let safeErrorBase = esc(error.message);
+        let errorHint = "";
+
         // HTTPS環境からHTTP(ローカル)へ接続しようとして失敗した場合のヒントを追加
         const isNetworkError = error.name === 'TypeError' || error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network');
         
         if (isNetworkError) {
             if (window.location.protocol === 'file:') {
-                errorMsg += isEn 
-                    ? "<br>⚠️ <strong>Security Restriction:</strong> You cannot make API requests when opening the file directly (file://). Please use a local server like 'Live Server' in VS Code or run 'npx serve'."
+                errorHint = isEn 
+                    ? "<br>⚠️ <strong>Security Restriction:</strong> You cannot make API requests when opening the file directly (file://). Please use a local server."
                     : "<br>⚠️ <strong>セキュリティ制限:</strong> ファイルを直接ブラウザで開いている(file://)ため、APIリクエストが遮断されました。VS CodeのLive Serverを使用するか、'npx serve' 等のローカルサーバー経由で開いてください。";
             } else {
-                errorMsg += isEn 
+                errorHint = isEn 
                     ? "<br>⚠️ Request Blocked: Check your Internet connection and API Token. If using Gemma 3, make sure you've accepted the license on the Hugging Face model page."
                     : "<br>⚠️ リクエストが遮断されました: トークンの権限、ネット接続、広告ブロックを確認してください。Gemma 3を使用する場合、HFのモデルページでライセンスへの同意が必要です。";
-                errorMsg += `<br><small>Debug Info: ${error.name} - ${error.message}</small>`;
-                
-                if (window.location.protocol === 'https:') {
-                    errorMsg += isEn ? " (Mixed Content check)" : " (HTTPS/HTTP混在の可能性)";
-                }
+                errorHint += `<br><small>Debug Info: ${esc(error.name)} - ${safeErrorBase}</small>`;
             }
         }
-        responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ❌ ${isEn ? 'Error occurred' : 'エラーが発生しました'}: ${errorMsg}`;
+        // HTMLタグ（errorHint）をエスケープせずに結合して表示
+        responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ❌ ${isEn ? 'Error occurred' : 'エラーが発生しました'}: ${safeErrorBase}${errorHint}`;
         console.error("Model request error:", error);
     } finally {
         isSending = false;
         sendButton.disabled = false;
         sendButton.textContent = isEn ? 'Send' : '送信';
-        // 最新のチャットが見えるようにスクロール
-        chatLog.scrollTop = chatLog.scrollHeight;
+        // 完了時に再度確実にスクロール
+        setTimeout(scrollToBottom, 150);
     }
 }
 

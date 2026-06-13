@@ -9,6 +9,7 @@ const TEST_URL = 'http://localhost:5173/html/plower/index.html'; // Viteのデ�
 // システムのブラウザを使用するための設定 (describeの外に配置してWorkerエラーを回避)
 test.use({
   headless: false, // 認証や推論を目視確認できるようにする
+  viewport: { width: 1280, height: 900 },
   launchOptions: {
     // 環境変数があればそれを使用し、なければ一般的なパスを試行
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
@@ -22,19 +23,22 @@ test.describe('Plower WebGPU Logic Verification', () => {
   const hfToken = process.env.HF_TOKEN;
 
   test.beforeEach(async ({ page }: { page: Page }) => {
-    // テスト全体のタイムアウトを15分に設定（モデルの巨大さとWASM推論の遅さを考慮）
-    test.setTimeout(900000);
+    // 全体タイムアウトを30分に設定
+    test.setTimeout(1800000); 
     await page.goto(TEST_URL);
   });
 
   test('Environment: Reset WebGPU Cache', async ({ page }) => {
-    // ストレージ不足によるエラー(1588752864)を防ぐため、最初にキャッシュをクリアする
+    // キャッシュクリアは IndexedDB 等を巡回するため少し時間を取る
+    test.setTimeout(120000);
     page.on('dialog', async dialog => {
       if (dialog.type() === 'confirm' || dialog.type() === 'alert') {
         await dialog.accept();
       }
     });
-    await page.click('#clearWebGpuCacheButton');
+    const clearBtn = page.locator('#clearWebGpuCacheButton');
+    await clearBtn.scrollIntoViewIfNeeded();
+    await clearBtn.click();
     await page.waitForLoadState('networkidle');
     console.log('WebGPU model cache cleared successfully.');
   });
@@ -56,8 +60,8 @@ test.describe('Plower WebGPU Logic Verification', () => {
     await page.fill('#userInput', '秘密のコードは何？');
     await page.click('#sendButton');
 
-    // WASM推論時は非常に遅いため、タイムアウトを3分に延長
-    await expect(page.locator('#chatLog')).toContainText('9999', { timeout: 180000 });
+    // CPU推論(WASM)の極端な遅延を考慮
+    await expect(page.locator('#chatLog')).toContainText('9999', { timeout: 1500000 });
     console.log('RAG file upload automation passed.');
   });
 
@@ -75,7 +79,7 @@ test.describe('Plower WebGPU Logic Verification', () => {
 
     // 回答に「遅刻」や「間に合わない」という文脈が含まれるか検証
     const chatLog = page.locator('#chatLog');
-    await expect(chatLog).toContainText(/(遅刻|間に合わない|すぐに出|出発|急いで|でなくちゃ)/, { timeout: 240000 });
+    await expect(chatLog).toContainText(/(遅刻|間に合わない|すぐに出|出発|急いで|でなくちゃ)/, { timeout: 1500000 });
     console.log('Qwen reasoning test passed.');
   });
 
@@ -108,6 +112,9 @@ test.describe('Plower WebGPU Logic Verification', () => {
     const authDialog = page.locator('h3:has-text("認証が必要です"), h3:has-text("License Required")');
     await expect(authDialog).toBeVisible({ timeout: 60000 });
 
+    // ダイアログまでスクロール (Viewportエラー対策)
+    await authDialog.scrollIntoViewIfNeeded();
+
     const tokenInput = page.locator('#authDialogToken');
     await expect(tokenInput).toBeVisible();
 
@@ -115,7 +122,7 @@ test.describe('Plower WebGPU Logic Verification', () => {
       console.log('Automating Llama 3.2 token entry using environment variable...');
       await tokenInput.fill(hfToken);
       await page.click('#authDialogRetry');
-      await expect(authDialog).not.toBeVisible();
+      await expect(authDialog).not.toBeVisible({ timeout: 180000 });
       console.log('Llama 3.2 token entry automation passed.');
     } else {
       console.warn('HF_TOKEN environment variable is not set. Testing manual cancellation.');
@@ -141,8 +148,8 @@ test.describe('Plower WebGPU Logic Verification', () => {
     await page.click('#sendButton');
 
     const chatLog = page.locator('#chatLog');
-    // Llama 3.2 は巨大なため、初回推論完了(10:00等の回答を含む)まで最大10分待機
-    await expect(chatLog).toContainText(/(遅刻|間に合わない|すぐに出|出発|急いで|でなくちゃ|10:00)/, { timeout: 600000 });
+    // Llama 3.2 の巨大さとWASM推論速度を考慮し、20分まで許容
+    await expect(chatLog).toContainText(/(遅刻|間に合わない|すぐに出|出発|急いで|でなくちゃ|10:00)/, { timeout: 1200000 });
     console.log('Llama 3.2 automated reasoning test passed.');
   });
 

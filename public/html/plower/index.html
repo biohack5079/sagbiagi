@@ -68,12 +68,11 @@
         <option value="gpt-oss:120b">GPT-OSS 120B (ローカル)</option>
         <option value="sarasina">Sarasina (SoftBank/local)</option>
         <option value="gemma3:4b-it-q4_K_M">Gemma 3 4B (HF Space / Ollama)</option>
-        <option value="webgpu:onnx-community/Qwen2.5-0.5B-Instruct" selected>WebGPU: Qwen 2.5 0.5B (デフォルト)</option>
+        <option value="webgpu:onnx-community/Qwen2.5-0.5B-Instruct" selected>WebGPU: Qwen 2.5 0.5B (安定版)</option>
         <option value="webgpu:onnx-community/Llama-3.2-1B-Instruct">WebGPU: Llama 3.2 1B (高精度)</option>
-        <option value="webgpu:onnx-community/gemma-2-2b-jpn-it">WebGPU: Gemma 2 2B (Google-JPN-ONNX)</option>
+        <option value="webgpu:onnx-community/gemma-2-2b-jpn-it">WebGPU: Gemma 2 2B (Google)</option>
         <option value="webgpu:onnx-community/gpt2-medium-ONNX">WebGPU: GPT-2 Medium (軽量)</option>
-        <option value="webgpu:onnx-community/Qwen2-VL-2B-Instruct">WebGPU: Qwen2-VL 2B (画像対応)</option>
-        <option value="gemini-flash">Gemini API (クラウド)</option>
+        <option value="gemini-flash">Gemini API (Test)</option>
     </select>
 
     <button id="sendButton">送信</button>
@@ -101,10 +100,12 @@
                 saveKey: 'Save',
                 modelLabel: 'Select Model:',
                 send: 'Send',
-                cloud: '(Cloud)',
                 local: '(local)',
                 hfUrlLabel: 'HF / Ollama URL:',
                 saveHfUrl: 'Save URL',
+                stable: '(Stable)',
+                highAccuracy: '(High Accuracy)',
+                lightweight: '(Lightweight)',
                 hfTokenLabel: 'HF Access Token:',
                 saveHfToken: 'Save Token',
                 manual: '[Usage Guide]',
@@ -139,14 +140,20 @@
 
             const select = document.getElementById('modelSelect');
             for (let opt of select.options) {
-                if (opt.textContent.includes('(クラウド)')) {
-                    opt.textContent = opt.textContent.replace('(クラウド)', t.cloud);
-                }
                 if (opt.textContent.includes('(ローカル)')) {
                     opt.textContent = opt.textContent.replace('(ローカル)', t.local);
                 }
                 if (opt.textContent.includes('(オフライン)')) {
                     opt.textContent = opt.textContent.replace('(オフライン)', t.offline);
+                }
+                if (opt.textContent.includes('(安定版)')) {
+                    opt.textContent = opt.textContent.replace('(安定版)', t.stable);
+                }
+                if (opt.textContent.includes('(高精度)')) {
+                    opt.textContent = opt.textContent.replace('(高精度)', t.highAccuracy);
+                }
+                if (opt.textContent.includes('(軽量)')) {
+                    opt.textContent = opt.textContent.replace('(軽量)', t.lightweight);
                 }
             }
             document.documentElement.lang = 'en';

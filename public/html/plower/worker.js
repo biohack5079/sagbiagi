@@ -5,19 +5,20 @@ import { pipeline, env, RawImage, TextStreamer } from "https://cdn.jsdelivr.net/
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
-// Gemma 2 2B 等の複数ファイルに分かれたモデル (.onnx + .onnx_data) を読み込む際、
-// OPFS (Origin Private File System) を有効にしていると WASM 側でのマウントエラー 
-// (Module.MountedFiles is not available) が発生しやすいため、安定性を重視して 
-// 標準の Browser Cache (Cache Storage API) を使用します。
-// 容量（クォータ）の上限は Cache API も OPFS も共通です。
-env.useOriginPrivateFileSystem = false;
 
-// Web Worker内部でさらにプロキシWorkerを起動しようとすると、外部重みファイル（.onnx_data）の
-// 読み込み（マウント）に失敗し「Module.MountedFiles is not available」が発生することがあります。
-env.backends.onnx.wasm.proxy = false;
+// OPFSは巨大モデルのロードに有利ですが、外部データファイル(.onnx_data)を持つモデルで
+// "Module.MountedFiles is not available" エラーが発生する既知の問題があります。
+// 互換性のため false に設定し、標準の Cache API を使用します。
+env.useOriginPrivateFileSystem = false; 
 
-// CPU(WASM)で動かす場合のスレッド数を最適化
-env.backends.onnx.wasm.numThreads = 1; // single-threaded to work without crossOriginIsolated
+const wasmPath = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2/dist/";
+
+// v3 における環境設定の強制適用
+const config = { wasmPaths: wasmPath, numThreads: 1, proxy: false };
+env.wasm = Object.assign(env.wasm || {}, config);
+env.backends = env.backends || {};
+env.backends.onnx = env.backends.onnx || {};
+env.backends.onnx.wasm = Object.assign(env.backends.onnx.wasm || {}, config);
 
 // GPT-2 のモデル上限: positional embedding = 1024 tokens
 const GPT2_MAX_POSITION = 1024;
@@ -49,7 +50,10 @@ async function initGenerator(task, modelId, device, token = null) {
         progress_callback: (x) => {
             if (x.status === 'download') {
                 const progressStr = (typeof x.progress === 'number' && !isNaN(x.progress)) ? ` (${Math.round(x.progress)}%)` : '';
-                postMessage({ status: 'loading', output: `モデル読込中(キャッシュ優先): ${x.file}${progressStr}` });
+                postMessage({ status: 'loading', output: `モデルダウンロード中: ${x.file}${progressStr}` });
+            } else if (x.status === 'init') {
+                // initフェーズはダウンロード後またはキャッシュからの読み込み時
+                postMessage({ status: 'loading', output: `モデル初期化中 (キャッシュから読み込み): ${x.file || '不明なファイル'}` });
             } else if (x.status === 'init') {
                 postMessage({ status: 'loading', output: `モデル構築中...` });
             }
@@ -101,7 +105,7 @@ self.onmessage = async (e) => {
             // UIで選ばれたモデルをそのまま使用（未指定ならQwen 0.5B）
             const modelId = requestedModelId || 'onnx-community/Qwen2.5-0.5B-Instruct';
             const isVLM = modelId.includes('VL');
-            const task = isVLM ? 'image-text-to-text' : 'text-generation';
+            const task = isVLM ? 'image-to-text' : 'text-generation';
             let useVision = !!image && isVLM;
 
             let warningPrefix = "";
@@ -164,7 +168,7 @@ self.onmessage = async (e) => {
                         role: "user",
                         content: [
                             { type: "image" },
-                            { type: "text", text: prompt + "\n(指示: Gemini APIのように、必ず日本語で簡潔に要点のみを回答してください。長文は避けてください。)" }
+                            { type: "text", text: prompt }
                         ]
                     }
                 ];
@@ -183,7 +187,7 @@ self.onmessage = async (e) => {
             } else {
                 // テキストのみのフォーマット
                 const messages = [
-                    { role: "system", content: "あなたは役に立つアシスタントです。必ず日本語で、Gemini APIのように非常に簡潔に要点のみを回答してください。長文は避けてください。" },
+                    { role: "system", content: "You are a helpful assistant. Respond using the language requested in the user's prompt instructions. If no specific language is mentioned or supported, default to English." },
                     { role: "user", content: prompt }
                 ];
                 let formattedPrompt;

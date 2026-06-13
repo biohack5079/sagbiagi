@@ -66,13 +66,23 @@ async function clearWebGpuModelCache() {
         : "本当にWebGPUモデルのキャッシュを全て削除しますか？\n（この操作は元に戻せません。モデルは次回使用時に再ダウンロードされます。）";
     if (confirm(msgConfirm)) {
         try {
+            console.log("Starting WebGPU cache clear...");
             const cacheName = 'transformers-cache'; // @huggingface/transformersのデフォルトキャッシュ名
             const deleted = await caches.delete(cacheName);
-            if (deleted) {
-                alert(isEn ? "WebGPU model cache cleared successfully." : "WebGPUモデルのキャッシュを削除しました。");
-            } else {
-                alert(isEn ? "WebGPU model cache not found or already empty." : "WebGPUモデルのキャッシュが見つからないか、既に空でした。");
+            
+            // OPFS内のONNXモデルディレクトリも削除して完全にクリーンにする
+            try {
+                const root = await navigator.storage.getDirectory();
+                await root.removeEntry('onnx', { recursive: true });
+                console.log("OPFS 'onnx' directory deleted.");
+            } catch (err) {
+                console.log("OPFS 'onnx' directory not found or already clear.");
             }
+
+            alert(isEn 
+                ? "WebGPU cache and OPFS storage cleared.\nPlease reload the page to re-download models." 
+                : "WebGPUキャッシュとOPFSストレージをクリアしました。\nページをリロードして、モデルを再ダウンロードしてください。");
+            location.reload(); // 確実にクリーンな状態にするためリロード
         } catch (e) {
             console.error("Failed to clear WebGPU model cache:", e);
             alert(isEn ? "An error occurred while clearing cache." : "キャッシュの削除中にエラーが発生しました。");
@@ -1211,8 +1221,8 @@ async function sendToModel() {
     let prompt;
     if (isGpt2) {
         // GPT-2(Baseモデル)用のシンプルなプロンプト。
-        // 指示を理解できないため、直感的に「続きを書かせる」形式にする。
-        prompt = `Context: ${context}\n\nQuestion: ${userInput}\nAnswer: ${isEn ? '' : '日本語で回答してください。'}`;
+        // 指示語や特定の書き出しを与えるとオウム返ししやすいため、Answerタグのみで生成を開始させます。
+        prompt = `Context: ${context}\n\nQuestion: ${userInput}\n\nAnswer:`;
     } else {
         // Qwen/Llama/Gemini等のInstructモデル用。
         prompt = `### System Instructions
@@ -1384,10 +1394,9 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSystemPrompt(); // システムプロンプトの事前読み込み
     document.getElementById('sendButton').addEventListener('click', sendToModel);
     document.getElementById('resetDocsButton').addEventListener('click', resetDocuments);
-    document.getElementById('clearWebGpuCacheButton').addEventListener('click', clearWebGpuModelCache);
-    document.getElementById('clearWebGpuCacheButton').addEventListener('click', clearWebGpuModelCache);
     document.getElementById('saveOcrButton').addEventListener('click', saveOcrTextAsFile);
     document.getElementById('syncFolderButton').addEventListener('click', syncLocalFolder);
+    document.getElementById('clearWebGpuCacheButton').addEventListener('click', clearWebGpuModelCache);
     
     // DOMロード後にイベントリスナーを登録 (安全策)
     const pasteArea = document.getElementById('pasteArea');

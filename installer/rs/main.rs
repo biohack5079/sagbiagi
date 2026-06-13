@@ -106,6 +106,10 @@ async fn main() {
     // Ensure model is present
     ensure_model_pulled(DEFAULT_MODEL);
 
+    // Create sagbi alias for the web app to use
+    let _ = Command::new("ollama").args(["rm", "sagbi"]).status();
+    let _ = Command::new("ollama").args(["cp", DEFAULT_MODEL, "sagbi"]).status();
+
     // 2. Start Signaling Server
     // バイナリ名はOSに合わせて自動切り替え (sagbi-server or sagbi-server.exe)
     let server_bin = format!("./signaling/sagbi-server{}", exe_suffix);

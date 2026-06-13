@@ -27,8 +27,31 @@ let currentImageBlob = null;
 // 言語設定の判定用 (初期値はブラウザ設定、後に質問内容で動的に更新)
 let isEn = !navigator.language.startsWith('ja');
 
+const isHttpsOrigin = window.location.protocol === 'https:';
+
 // システムプロンプトのキャッシュ
 let systemPromptCache = "";
+
+// --- Sagbiブリッジ (Cloudflare Worker) 連携用 ---
+let sagbiSocket = null;
+const pendingLlmResolves = new Map();
+
+const getSignalingUrl = () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    let url = urlParams.get('s');
+    if (url) return url;
+
+    const host = window.location.hostname;
+    // ローカル実行時は 8080 を優先
+    if (host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.')) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${protocol}//${host}:8080/ws/chat`;
+    } else {
+        // 公開サイト (Pages) では Cloudflare Worker プロキシを経由
+        const workerHost = "sagbi.biohack5079.workers.dev";
+        return `wss://${workerHost}/ws/chat`;
+    }
+};
 
 const PREVIEW_MAX_DOCS = 5; // コンテンツ表示エリアに表示する最大ファイル数
 
@@ -234,18 +257,19 @@ async function loadDocuments() {
     }
     try {
         const ragDir = await getRagDir();
-        persistentDocuments = [];
+        const docs = [];
         for await (const entry of ragDir.values()) {
             if (entry.kind === 'file') {
                 try {
                     // ファイルの実体にアクセス可能か検証（幽霊ファイルを排除）
                     await ragDir.getFileHandle(entry.name);
-                    persistentDocuments.push({ name: entry.name });
+                    docs.push({ name: entry.name });
                 } catch (e) {
                     console.warn(`Cleaned up stale file handle: ${entry.name}`);
                 }
             }
         }
+        persistentDocuments = docs;
         updateFileListDisplay();
     } catch (e) {
         console.error("Failed to load documents from OPFS:", e);
@@ -1198,10 +1222,19 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
         });
 
     } else {
-        // --- Ollama Model ---
-        let hfUrl = localStorage.getItem('plowerHfUrl') || 'http://localhost:11434';
-        if (hfUrl.endsWith('/')) hfUrl = hfUrl.slice(0, -1);
-        endpoint = hfUrl.endsWith('/api/generate') ? hfUrl : `${hfUrl}/api/generate`;
+        // --- Ollama / Local AI Model ---
+        const hfUrl = localStorage.getItem('plowerHfUrl') || 'http://localhost:11434';
+        const isLocalHost = hfUrl.includes('localhost') || hfUrl.includes('127.0.0.1');
+
+        // HTTPS環境で localhost にアクセスしようとする場合、自動で Sagbiブリッジ(WebSocket)に切り替える
+        if (isHttpsOrigin && isLocalHost) {
+            console.log("[Bridge] Routing request via Sagbi Bridge (WebSocket)...");
+            return await fetchViaSagbiBridge(modelSelect, llmPrompt, imageData, onChunk);
+        }
+
+        // 通常の HTTP 直接接続
+        let endpoint = hfUrl.endsWith('/') ? hfUrl.slice(0, -1) : hfUrl;
+        endpoint = endpoint.endsWith('/api/generate') ? endpoint : `${endpoint}/api/generate`;
 
         bodyData = {
             model: modelSelect,
@@ -1213,6 +1246,25 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
 
         return await fetchOllamaStream(endpoint, bodyData, onChunk);
     }
+}
+
+/**
+ * WebSocketブリッジ経由で推論リクエストを送信
+ */
+async function fetchViaSagbiBridge(model, prompt, image, onChunk) {
+    if (!sagbiSocket || sagbiSocket.readyState !== WebSocket.OPEN) {
+        throw new Error("Sagbi Bridge is not connected. Make sure your local server is running and Cloudflare Tunnel is active.");
+    }
+
+    const requestId = "plower-" + crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+        pendingLlmResolves.set(requestId, { resolve, reject, onChunk, result: "" });
+        
+        sagbiSocket.send(JSON.stringify({
+            type: 'chat_message',
+            payload: { id: requestId, model, text: prompt, image: image?.split(',')[1] }
+        }));
+    });
 }
 
 // Ollamaストリーミング処理のヘルパー
@@ -1378,15 +1430,17 @@ async function sendToModel() {
     let prompt;
     if (isGpt2) {
         // GPT-2(Baseモデル)用のシンプルなプロンプト。
-        prompt = `Context: ${context}\n\nQuestion: ${userInput}\n\nAnswer:`;
+        prompt = `${systemPrompt}${languageSuffix}\n\nContext: ${context}\n\nQuestion: ${userInput}\n\nAnswer:`;
     } else {
         // Qwen 0.5B 用: 余計な指示を削り、検索結果をそのまま出させる「抽出モード」
-        prompt = `Context:
+        prompt = `${systemPrompt}${languageSuffix}
+
+Context:
 ${context}
 
 Question: ${userInput}
 
-Strict Rule: Copy the exact value from the context. Do not invent.
+Instruction: Please answer based on the provided documents. If the information is not present, use your technical knowledge as a coding assistant to provide the best possible response.
 Answer:`;
     }
     
@@ -1493,9 +1547,22 @@ Answer:`;
 
         // HTTPS環境からHTTP(ローカル)へ接続しようとして失敗した場合のヒントを追加
         const isNetworkError = error.name === 'TypeError' || error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network');
-        
+        const hfUrl = localStorage.getItem('plowerHfUrl') || "";
+        const isLocalRequest = hfUrl.includes('localhost') || hfUrl.includes('127.0.0.1') || !hfUrl;
         if (isNetworkError) {
-            // ... (既存のネットワークエラー処理)
+            if (window.location.protocol === 'file:') {
+                errorHint = isEn 
+                    ? "<br>⚠️ <strong>Security Restriction:</strong> You cannot make API requests when opening the file directly (file://). Please use a local server like VS Code's 'Live Server'."
+                    : "<br>⚠️ <strong>セキュリティ制限:</strong> ファイルを直接ブラウザで開いている(file://)ため、APIリクエストが遮断されました。VS CodeのLive Serverを使用するか、'npx serve' 等のローカルサーバー経由で開いてください。";
+            } else if (isHttpsOrigin && isLocalRequest) {
+                errorHint = isEn 
+                    ? "<br>⚠️ <strong>Mixed Content Error:</strong> You are accessing Plower via HTTPS, but trying to connect to a local HTTP server. Browsers block this for security. <br><strong>Solution:</strong> Use the local version at <code>http://localhost:5173</code> instead of the public URL."
+                    : "<br>⚠️ <strong>セキュリティ制限（混合コンテンツ）:</strong> HTTPSのサイトからローカルのHTTPサーバー（Ollama等）へは接続できません。<br><strong>解決策:</strong> 公開URLではなく、ローカルの <code>http://localhost:5173</code> 等からアプリを開いてください。";
+            } else if (isLocalRequest) {
+                errorHint = isEn
+                    ? "<br>⚠️ <strong>CORS / Connection Error:</strong> Cannot reach Ollama. <br><strong>Solution:</strong> Ensure Ollama is running and set environment variable: <code>OLLAMA_ORIGINS=\"*\"</code>"
+                    : "<br>⚠️ <strong>接続エラー / CORS制限:</strong> ローカルのAIサーバーに接続できません。<br><strong>解決策:</strong> Ollamaが起動しているか確認し、環境変数 <code>OLLAMA_ORIGINS=\"*\"</code> を設定して再起動してください。";
+            }
         }
 
         if (safeErrorBase.includes('容量不足') || safeErrorBase.includes('Quota') || safeErrorBase.includes('DEVICE_SPACE')) {
@@ -1515,15 +1582,15 @@ Answer:`;
 
         if (isNetworkError) {
             if (window.location.protocol === 'file:') {
-                errorHint = isEn 
+                errorHint += isEn 
                     ? "<br>⚠️ <strong>Security Restriction:</strong> You cannot make API requests when opening the file directly (file://). Please use a local server."
                     : "<br>⚠️ <strong>セキュリティ制限:</strong> ファイルを直接ブラウザで開いている(file://)ため、APIリクエストが遮断されました。VS CodeのLive Serverを使用するか、'npx serve' 等のローカルサーバー経由で開いてください。";
             } else {
-                errorHint = isEn 
+                errorHint += isEn 
                     ? "<br>⚠️ Request Blocked: Check your Internet connection and API Token. If using Gemma 3, make sure you've accepted the license on the Hugging Face model page."
                     : "<br>⚠️ リクエストが遮断されました: トークンの権限、ネット接続、広告ブロックを確認してください。Gemma 3を使用する場合、HFのモデルページでライセンスへの同意が必要です。";
-                errorHint += `<br><small>Debug Info: ${esc(error.name)} - ${safeErrorBase}</small>`;
             }
+            errorHint += `<br><small>Debug Info: ${esc(error.name)} - ${safeErrorBase}</small>`;
         }
 
         if (safeErrorBase.includes('Module.MountedFiles is not available')) {
@@ -1641,6 +1708,70 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('saveOcrButton').addEventListener('click', saveOcrTextAsFile);
     document.getElementById('syncFolderButton').addEventListener('click', syncLocalFolder);
     
+    // --- Sagbiブリッジ接続の初期化 ---
+    const connectBridge = () => {
+        const url = getSignalingUrl();
+        const ws = new WebSocket(url);
+        sagbiSocket = ws;
+
+        ws.onopen = () => {
+            console.log("[Bridge] Connected to Sagbi mesh.");
+            ws.send(JSON.stringify({ type: 'register', payload: { role: 'user' } }));
+        };
+
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'chat_response') {
+                let payload = msg.payload;
+                // GoサーバーからペイロードがJSON文字列として送られてくる場合のパース処理を追加
+                if (typeof payload === 'string' && payload.startsWith('{')) {
+                    try { payload = JSON.parse(payload); } catch (e) {}
+                }
+
+                const { id: payloadId, text, done } = payload;
+                // IDの抽出元を拡張し、無い場合は保留中のリクエストが1つならそれを救済
+                let id = payloadId || msg.id;
+                
+                // マップに直接存在しない場合（prefix違いなど）の救済
+                if (id && !pendingLlmResolves.has(id)) {
+                    if (id.startsWith('ai-') && pendingLlmResolves.has(id.substring(3))) {
+                        id = id.substring(3);
+                    } else if (pendingLlmResolves.size === 1) {
+                        id = pendingLlmResolves.keys().next().value;
+                    }
+                } else if (!id && pendingLlmResolves.size === 1) {
+                    id = pendingLlmResolves.keys().next().value;
+                }
+
+                const pending = pendingLlmResolves.get(id);
+                if (pending) {
+                    if (text !== undefined) {
+                        pending.result = text;
+                        if (pending.onChunk) pending.onChunk(pending.result);
+                    }
+                    if (done) {
+                        pending.resolve(pending.result);
+                        pendingLlmResolves.delete(id);
+                    }
+                }
+            }
+        };
+
+        ws.onclose = () => {
+            console.warn("[Bridge] Connection closed. Retrying...");
+            setTimeout(connectBridge, 3000);
+        };
+
+        ws.onerror = (e) => console.error("[Bridge] WebSocket Error:", e);
+    };
+
+    // 公開URL(HTTPS)での実行時、またはローカル開発中にブリッジを有効化
+    connectBridge();
+
+
+    // --- P2Pブリッジ (WebRTC) の準備 ---
+    // P2Pモードが有効な場合、バックグラウンドの terminal_receiver.js と接続を試みます。
+    if (localStorage.getItem('plowerUseP2P') === 'true') setupP2PBridge();
 
     // APIキーのロードと保存処理
     const savedKey = localStorage.getItem('plowerGeminiApiKey');
@@ -1774,3 +1905,49 @@ document.addEventListener('DOMContentLoaded', () => {
         window.opener.postMessage('PLOWER_READY', '*');
     }
 });
+
+/**
+ * P2Pブリッジ (WebRTC) のシグナリングと接続確立
+ * これにより、HTTPS環境からでもローカルのAIリソースを安全に使用可能になります。
+ */
+async function setupP2PBridge() {
+    const hfUrl = localStorage.getItem('plowerHfUrl') || 'http://localhost:8080';
+    // URLをWebSocket形式に変換
+    const wsUrl = hfUrl.replace(/^http/, 'ws') + '/ws';
+    
+    console.log(`[P2P] Attempting bridge signaling via: ${wsUrl}`);
+    
+    const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    const dc = pc.createDataChannel("plower_llm_bridge");
+    
+    dc.onopen = () => console.log("[P2P] Bridge Established! You can now bypass Mixed Content restrictions.");
+    dc.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        // 受信したLLMレスポンスをチャットに反映する等の処理
+        console.log("[P2P] Message from local bridge:", msg);
+    };
+
+    // シグナリングサーバー（Go）経由でSDPを交換するロジックをここに記述
+    // 現時点では skeleton（骨組み）のみ。
+    window.p2pBridgeChannel = dc;
+}
+
+/**
+ * P2Pブリッジ経由でリクエストを送るためのラップ関数
+ */
+async function fetchViaP2P(bodyData) {
+    if (!window.p2pBridgeChannel || window.p2pBridgeChannel.readyState !== 'open') {
+        throw new Error("P2P Bridge not ready.");
+    }
+    return new Promise((resolve) => {
+        const requestId = Date.now().toString();
+        const timeout = setTimeout(() => resolve({ error: "P2P Timeout" }), 30000);
+        
+        window.p2pBridgeChannel.send(JSON.stringify({ id: requestId, ...bodyData }));
+        // レシーバー側で処理が終わったら、requestIdを付けて結果を返してもらう
+        // (実際にはメッセージハンドラで resolve を呼ぶための管理リストが必要)
+    });
+}

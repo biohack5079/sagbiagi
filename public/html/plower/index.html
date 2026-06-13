@@ -64,7 +64,6 @@
 
     <label for="modelSelect">モデル選択:</label>
     <select id="modelSelect">
-        <option value="gemma3:4b-it-q4_K_M">Gemma 4B (ローカル)</option>
         <option value="gemma:7b">Gemma 7B (ローカル)</option>
         <option value="gemma3:12b">Gemma 12B (ローカル)</option>
         <option value="gpt-oss:20b">GPT-OSS 20B (ローカル)</option>
@@ -75,6 +74,7 @@
         <option value="webgpu:onnx-community/gemma-2-2b-jpn-it">WebGPU: Gemma 2 2B (Google)</option>
         <option value="webgpu:onnx-community/gpt2-medium-ONNX">WebGPU: GPT-2 Medium (軽量)</option>
         <option value="gemini-flash">Gemini API (Test)</option>
+        <option value="sagbi">Gemma 4B (Sagbi)</option>
     </select>
 
     <button id="sendButton">送信</button>
@@ -103,6 +103,7 @@
                 modelLabel: 'Select Model:',
                 send: 'Send',
                 local: '(local)',
+                bridge: '(Bridge)',
                 hfUrlLabel: 'HF / Ollama URL:',
                 saveHfUrl: 'Save URL',
                 stable: '(Stable)',
@@ -144,6 +145,9 @@
             for (let opt of select.options) {
                 if (opt.textContent.includes('(ローカル)')) {
                     opt.textContent = opt.textContent.replace('(ローカル)', t.local);
+                }
+                if (opt.textContent.includes('Bridge')) {
+                    opt.textContent = opt.textContent.replace('Bridge', t.bridge);
                 }
                 if (opt.textContent.includes('(オフライン)')) {
                     opt.textContent = opt.textContent.replace('(オフライン)', t.offline);

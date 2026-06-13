@@ -19,6 +19,11 @@ if ! ollama list | grep -q "$MODEL"; then
     ollama pull "$MODEL"
 fi
 
+# Ensure "sagbi" alias exists and points to the standard model
+echo "Creating 'sagbi' model alias..."
+ollama rm sagbi > /dev/null 2>&1 || true
+ollama cp "$MODEL" sagbi
+
 # Check if Ollama service is actually responding
 if ! curl -s http://localhost:11434/api/tags > /dev/null; then
     echo "Ollama service is not running. Starting it in background..."
@@ -42,6 +47,7 @@ echo "Cleaning up old SAGBI processes..."
 pkill -f sagbi-server || true
 pkill -f cloudflared || true
 pkill -f terminal_receiver.js || true
+ollama rm sagbi > /dev/null 2>&1 || true
 if command -v fuser >/dev/null; then
     fuser -k $CHECK_PORT/tcp >/dev/null 2>&1 || true
 fi
@@ -187,5 +193,5 @@ echo "--- SAGBI AGI is running ---"
 echo "Press Ctrl+C to stop all services."
 
 # Keep the script running to maintain the processes
-trap "kill $SIGNAL_PID $TUNNEL_PID $RECEIVER_PID; exit" INT TERM
+trap "kill $SIGNAL_PID $TUNNEL_PID $RECEIVER_PID; ollama rm sagbi > /dev/null 2>&1 || true; exit" INT TERM
 wait

@@ -26,15 +26,17 @@ h1 {
 /* --- RAGコントロールヘッダーの修正スタイル (レイアウト崩れ対策) --- */
 .rag-controls-header {
     display: flex; /* 要素を横並びにする */
-    flex-wrap: wrap; /* 折り返しを許可 */
+    flex-wrap: nowrap; /* 100%表示でも改行させない */
     align-items: center; /* 垂直方向の中央揃え */
-    gap: 6px; /* 100%ズーム時に一行に収めるため間隔を詰める */
+    gap: 8px; 
     margin-top: 20px; /* H1からの間隔を確保 */
     margin-bottom: 20px; /* 次のセクションとの間隔 */
     padding: 10px;
     background: #f9f9f9;
     border-radius: 8px;
-    overflow-x: auto; /* はみ出し時に横スクロールを許可 */
+    min-width: 0;
+    overflow-x: auto; /* はみ出し時にスクロール可能に */
+    white-space: nowrap;
 }
 
 /* rag-controls-header内のラベルは、Flexboxで位置を揃えるため、標準のmarginをリセット */
@@ -160,8 +162,8 @@ button {
     border-radius: 4px;
     margin: 0;
     height: 40px;
-    min-width: fit-content; /* 内容に合わせる */
-    font-size: 13px; /* 14pxだと100%ズームで溢れやすいため13pxに微調整 */
+    min-width: max-content; /* 改行を物理的に阻止 */
+    font-size: 13px;
     font-weight: bold;
     display: inline-flex;
     align-items: center;
@@ -170,6 +172,7 @@ button {
     transition: background-color 0.2s;
     white-space: nowrap; /* ズーム時の改行を絶対に防止 */
     padding: 0 8px; /* パディングを詰めて横幅を節約 */
+    flex-shrink: 0; /* 圧縮を防止 */
 }
 
 #resetDocsButton {

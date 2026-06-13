@@ -10,7 +10,7 @@ if ! command -v npm &> /dev/null; then
 fi
 
 echo "[1/2] Installing dependencies..."
-npm install
+npm install --legacy-peer-deps
 
 echo "[2/2] Transpiling TypeScript and Bundling..."
 npm run build

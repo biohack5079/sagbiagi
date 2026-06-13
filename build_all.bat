@@ -29,7 +29,7 @@ cd ..
 :: 3. Frontend (React / TypeScript) のビルド
 echo [3/3] Building Frontend (React/TypeScript)...
 :: npm がインストールされていることを確認
-call npm install
+call npm install --legacy-peer-deps
 call npm run build
 if %ERRORLEVEL% neq 0 (
     echo [Error] Frontend build failed.

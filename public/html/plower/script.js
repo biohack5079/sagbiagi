@@ -106,13 +106,16 @@ async function clearWebGpuModelCache() {
                 }
             }
 
-            alert(isEn 
-                ? "WebGPU cache and OPFS storage cleared.\nPlease reload the page to re-download models." 
-                : "WebGPUキャッシュとOPFSストレージをクリアしました。\nページをリロードして、モデルを再ダウンロードしてください。");
+            console.log("Storage cleared. Reloading...");
             location.reload(); // 確実にクリーンな状態にするためリロード
         } catch (e) {
-            console.error("Failed to clear WebGPU model cache:", e);
-            alert(isEn ? "An error occurred while clearing cache." : "キャッシュの削除中にエラーが発生しました。");
+            console.error("Critical storage error:", e);
+            const isNoSpace = e.message.includes('NO_DEVICE_SPACE') || e.name === 'QuotaExceededError';
+            const msg = isNoSpace 
+                ? (isEn ? "Disk is critically full. The app cannot even delete files.\n\nPlease open Browser Settings -> Privacy -> Cookies and Site Data -> Manage Data, and manually delete data for this site."
+                        : "ディスク容量が完全に不足しており、アプリ内から消去命令すら実行できません。\n\nブラウザの「設定 ＞ プライバシー ＞ クッキーとサイトデータ ＞ データの管理」から、このサイトのデータを手動で削除してください。")
+                : (isEn ? "An error occurred while clearing cache." : "キャッシュの削除中にエラーが発生しました。");
+            alert(msg);
         }
     }
 }
@@ -462,8 +465,10 @@ async function showAuthDialog(modelId, technicalError = "") {
         const midLower = modelId.toLowerCase();
         const isGated = midLower.includes('gemma') || midLower.includes('llama');
 
-        if (midLower.includes('gemma')) {
+        if (midLower.includes('gemma-2')) {
             licenseUrl = `https://huggingface.co/google/gemma-2-2b-it`;
+        } else if (midLower.includes('gemma')) {
+            licenseUrl = `https://huggingface.co/google/gemma-7b`;
         } else if (midLower.includes('llama')) {
             licenseUrl = `https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct`;
         }
@@ -478,18 +483,21 @@ async function showAuthDialog(modelId, technicalError = "") {
 
         const title = isGated ? (isEn ? 'License Required' : '規約同意と認証が必要です') : (isEn ? 'Model Load Error' : 'モデルの読み込みに失敗しました');
         const mainMsg = isGated 
-            ? (isEn ? 'Access denied. You need to accept the license and provide a token.' : 'アクセスが拒否されました。利用規約への同意とトークンの入力が必要です。')
-            : (isEn ? 'Could not find the model. Please check the ID or your connection.' : 'モデルが見つかりません。リポジトリ名が正しいか、通信環境を確認してください。');
+            ? (isEn ? `Access denied. Please check your token and license agreement.` : `アクセスが拒否されました。トークンの有効性または公式リポジトリでの規約同意を確認してください。`)
+            : (isEn ? `Failed to load model. Check the ID or network.` : `モデルの読み込みに失敗しました。IDまたは接続を確認してください。`);
 
         dialog.innerHTML = `
             <h3 style="margin-top:0; color:#d32f2f;">${title}</h3>
             <p style="font-size:14px; line-height:1.5;">${mainMsg}</p>
+            <div style="background:#fff1f0; color:#d32f2f; padding:8px; border-radius:4px; font-size:12px; margin-bottom:15px; border:1px solid #ffa39e; word-break:break-all;">
+                <strong>Error:</strong> ${esc(technicalError || 'Unknown Error')}
+            </div>
             ${licenseSection}
             <div style="background:#f9f9f9; padding:12px; border-radius:6px; margin-bottom:15px; font-size:13px; border-left: 4px solid #007bff;">
                 <strong>${isEn ? 'Target Repository' : '読み込み先リポジトリ'}:</strong><br>
                 <a href="${repoUrl}" target="_blank" style="color:#007bff; text-decoration:underline; word-break:break-all; display:block; margin-top:5px; font-weight:bold;">${repoUrl}</a>
-                <p style="margin-top:8px; font-size:11px; color:#666;">
-                    ${isEn ? 'Note: If this is GPT-2 or Qwen, it is public. A 404 here usually means a network error or incorrect model ID.' : '※補足: GPT-2やQwenなどの公開モデルでエラーが出る場合、リポジトリ名の指定ミスか、ネットワークの一時的なエラーの可能性があります。'}
+                <p style="margin-top:8px; font-size:12px; color:#666;">
+                    ${isEn ? 'Note: Large models like Gemma 2 may be evicted from cache if disk space is low, causing re-downloads.' : '※補足: Gemma 2等の巨大モデルは、ディスク残量が少ないとブラウザがキャッシュを自動削除し、再ダウンロードが発生することがあります。'}
                 </p>
             </div>
             ${isGated ? `
@@ -1042,7 +1050,7 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
                     resolve(output);
                 } else if (status === 'auth_error') {
                     // 認証エラー時はダイアログを出してトークン入力を待ち、その後再送する
-                    showAuthDialog(modelId).then(newToken => {
+                    showAuthDialog(modelId, error).then(newToken => {
                         localStorage.setItem('plowerHfToken', newToken);
                         const hfInput = document.getElementById('hfToken');
                         if (hfInput) hfInput.value = newToken;
@@ -1056,10 +1064,10 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
                         });
                     }).catch(() => {
                         window.capsuleWorker.removeEventListener('message', onMessage);
-                        reject(new Error(isEn ? 'Access denied. Please check Hugging Face permissions.' : 'アクセスが拒否されました。Hugging Faceの権限を確認してください。'));
+                        reject(new Error(isEn ? `Access denied: ${error || 'User cancelled'}` : `アクセス拒否: ${error || 'キャンセルされました'}`));
                     });
                 } else if (status === 'loading') {
-                    lastOutput = `[WASM/WebGPU Loading: ${output}]`;
+                    lastOutput = `[WASM/WebGPU: ${output}]`;
                     if (onChunk) onChunk(lastOutput);
                 }
             };
@@ -1259,35 +1267,29 @@ async function sendToModel() {
         // GPT-2(Baseモデル)用のシンプルなプロンプト。
         prompt = `Context: ${context}\n\nQuestion: ${userInput}\n\nAnswer:`;
     } else {
-        // 指示が多すぎるとQwen 0.5Bが混乱するため、タスクを「抽出」に絞り込みます
-        prompt = `Based on the context below, answer the user's question.
-
-<CONTEXT>
+        // Qwen 0.5B 用: 余計な指示を削り、検索結果をそのまま出させる「抽出モード」
+        prompt = `Context:
 ${context}
-</CONTEXT>
 
-<QUESTION>
-${userInput}
-</QUESTION>
+Question: ${userInput}
 
-### RULES:
-1. Copy numbers and codes EXACTLY as they appear in the <CONTEXT>.
-2. DO NOT create new codes. DO NOT use your own knowledge.
-3. Output ONLY the answer.
-
-${languageSuffix}`;
+Strict Rule: Copy the exact value from the context. Do not invent.
+Answer:`;
     }
     
     // スクロールを最下部へ移動させるヘルパー
     const scrollToBottom = () => {
-        // 回答の末尾が入力欄に隠れないよう、画面の7割に相当する余白を一時的に確保
-        document.body.style.paddingBottom = "70vh";
-        
-        // スムーズスクロールを二重に適用して確実に最下部を表示
-        responseParagraph.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setTimeout(() => {
-            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-        }, 100);
+        // ユーザーが手動で上にスクロールしている場合は自動スクロールしない
+        const isNearBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 200;
+        if (isNearBottom) {
+            document.body.style.paddingBottom = "50vh"; // 適度な余白
+            responseParagraph.scrollIntoView({ behavior: 'auto', block: 'end' });
+        }
+
+        // requestAnimationFrameでレンダリング後の位置を微調整
+        requestAnimationFrame(() => {
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'auto' });
+        });
     };
 
     // --- 回答生成 ---
@@ -1380,6 +1382,25 @@ ${languageSuffix}`;
         const isNetworkError = error.name === 'TypeError' || error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network');
         
         if (isNetworkError) {
+            // ... (既存のネットワークエラー処理)
+        }
+
+        if (safeErrorBase.includes('容量不足') || safeErrorBase.includes('Quota') || safeErrorBase.includes('DEVICE_SPACE')) {
+            errorHint += `<br><br>⚠️ <strong>ストレージの問題を検出しました:</strong><br>`;
+            errorHint += isEn 
+                ? `Please check the <a href="manual.html" style="color:#d32f2f; font-weight:bold; text-decoration:underline;">Troubleshooting Guide</a>.`
+                : `解決方法については、こちらの <a href="manual.html" style="color:#d32f2f; font-weight:bold; text-decoration:underline;">[使い方説明書/トラブルシューティング]</a> を確認してください。`;
+        }
+
+        if (safeErrorBase.includes('アクセス拒否') || safeErrorBase.includes('Access denied') || safeErrorBase.includes('403') || safeErrorBase.includes('forbidden')) {
+            errorHint += `<br><br>💡 <strong>アクセス拒否の可能性があります:</strong><br>`;
+            errorHint += isEn 
+                ? `1. Gated model needs license agreement on HF.<br>2. Token scope might be insufficient.<br>3. Network/Proxy is blocking the request.<br>4. If "Downloaded" but failed, check memory (OOM).<br>`
+                : `1. 制限付きモデルの場合、HF公式サイトでの規約同意が必要です。<br>2. 入力したトークンの権限（Scope）が不足している可能性があります。<br>3. ネットワークやプロキシによって通信が遮断されている可能性があります。<br>4. ダウンロード済みなのに拒否される場合、メモリ不足の可能性があります。<br>`;
+            errorHint += `<br>👉 <a href="manual.html" style="color:#d32f2f; font-weight:bold; text-decoration:underline;">[${isEn ? 'Troubleshooting' : '解決方法を確認する'}]</a>`;
+        }
+
+        if (isNetworkError) {
             if (window.location.protocol === 'file:') {
                 errorHint = isEn 
                     ? "<br>⚠️ <strong>Security Restriction:</strong> You cannot make API requests when opening the file directly (file://). Please use a local server."
@@ -1390,6 +1411,14 @@ ${languageSuffix}`;
                     : "<br>⚠️ リクエストが遮断されました: トークンの権限、ネット接続、広告ブロックを確認してください。Gemma 3を使用する場合、HFのモデルページでライセンスへの同意が必要です。";
                 errorHint += `<br><small>Debug Info: ${esc(error.name)} - ${safeErrorBase}</small>`;
             }
+        }
+
+        if (safeErrorBase.includes('Module.MountedFiles is not available')) {
+            errorHint += `<br><br>💡 <strong>ファイルシステムアクセスエラーの可能性があります:</strong><br>`;
+            errorHint += isEn
+                ? `The model failed to link its weight files. This usually happens in Incognito mode or browsers with restricted disk access. Please try in a normal window or clear WebGPU cache.`
+                : `モデルの重みファイルの連結に失敗しました。シークレットモードや、ディスクアクセスが制限された環境で発生しやすいエラーです。通常のウィンドウで試すか、「WebGPUモデルキャッシュをクリア」を実行してください。`;
+            errorHint += `<br>👉 <button onclick="clearWebGpuModelCache()" style="background:#d32f2f; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; margin-top:5px;">${isEn ? 'Clear WebGPU Cache Now' : '今すぐWebGPUキャッシュをクリアする'}</button>`;
         }
         // HTMLタグ（errorHint）をエスケープせずに結合して表示
         responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong> ❌ ${isEn ? 'Error occurred' : 'エラーが発生しました'}: ${safeErrorBase}${errorHint}`;
@@ -1408,8 +1437,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // ストレージの空き容量を確認（ユーザーの不安解消用）
     if (navigator.storage && navigator.storage.estimate) {
         navigator.storage.estimate().then(estimate => {
-            const used = (estimate.usage / 1024 / 1024 / 1024).toFixed(2);
+            const usage = estimate.usage || 0;
             const quota = (estimate.quota / 1024 / 1024 / 1024).toFixed(2);
+            const usedGB = usage / 1024 / 1024 / 1024;
+            
+            // 1000GBを超える、または負の値などの異常値はブラウザの計算ミスとして伏せる
+            // 異常な数値や、クォータの90%以上を消費している場合に警告
+            const used = (usedGB < 0 || usedGB > 1000) ? "Fatal/Full" : usedGB.toFixed(2);
             const storageText = `[Storage] Used: ${used} GB / Quota: ${quota} GB`;
             console.log(storageText);
             if (estimate.quota < 2 * 1024 * 1024 * 1024) {
@@ -1444,22 +1478,18 @@ document.addEventListener('DOMContentLoaded', () => {
         bookmarkletLink.href = bookmarkletCode;
     }
 
-    loadDocuments(); 
-    loadSystemPrompt(); // システムプロンプトの事前読み込み
+    // --- イベントリスナーの登録 (失敗しても後続に影響しないよう前方に配置) ---
+    const clearWebGpuBtn = document.getElementById('clearWebGpuCacheButton');
+    if (clearWebGpuBtn) {
+        clearWebGpuBtn.style.flexShrink = '0'; // 圧縮を防止
+        clearWebGpuBtn.style.whiteSpace = 'nowrap'; 
+        clearWebGpuBtn.addEventListener('click', clearWebGpuModelCache);
+    }
     document.getElementById('sendButton').addEventListener('click', sendToModel);
     document.getElementById('resetDocsButton').addEventListener('click', resetDocuments);
     document.getElementById('saveOcrButton').addEventListener('click', saveOcrTextAsFile);
     document.getElementById('syncFolderButton').addEventListener('click', syncLocalFolder);
     
-    const clearWebGpuBtn = document.getElementById('clearWebGpuCacheButton');
-    if (clearWebGpuBtn) {
-        clearWebGpuBtn.style.whiteSpace = 'nowrap'; // 改行を防止
-        clearWebGpuBtn.addEventListener('click', clearWebGpuModelCache);
-    }
-    
-    // DOMロード後にイベントリスナーを登録 (安全策)
-    const pasteArea = document.getElementById('pasteArea');
-    if (pasteArea) pasteArea.addEventListener('paste', handlePaste);
 
     // APIキーのロードと保存処理
     const savedKey = localStorage.getItem('plowerGeminiApiKey');
@@ -1564,6 +1594,14 @@ document.addEventListener('DOMContentLoaded', () => {
             sendToModel();
         }
     });
+
+    // DOMロード後にイベントリスナーを登録 (安全策)
+    const pasteArea = document.getElementById('pasteArea');
+    if (pasteArea) pasteArea.addEventListener('paste', handlePaste);
+
+    // 非同期データの読み込みを開始
+    loadDocuments(); 
+    loadSystemPrompt(); 
 
     // --- ブックマークレット連携用: 外部サイトからのコンテンツ注入リスナー ---
     window.addEventListener('message', async (event) => {

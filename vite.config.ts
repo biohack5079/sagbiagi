@@ -28,10 +28,15 @@ export default defineConfig({
         '404': resolve(__dirname, 'public/html/404.html'),
       },
       output: {
-        manualChunks: {
-          // 大型のライブラリをベンダーチャックとして分離
-          'three-vendor': ['three', '@react-three/fiber', '@react-three/drei'],
-          'react-vendor': ['react', 'react-dom'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('three') || id.includes('@react-three')) {
+              return 'three-vendor';
+            }
+            if (id.includes('react') || id.includes('react-dom')) {
+              return 'react-vendor';
+            }
+          }
         },
       },
     },

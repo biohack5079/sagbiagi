@@ -4,13 +4,15 @@ import { pipeline, env, RawImage, TextStreamer } from "https://cdn.jsdelivr.net/
 // WebGPUが使えない環境（Linuxの一部や未対応ブラウザ）では、自動的にCPU(WASM)にフォールバックします。
 
 env.allowLocalModels = false;
-env.useBrowserCache = true;
 
-// OPFSは巨大モデルのロードに有利ですが、外部データファイル(.onnx_data)を持つモデルで
-// "Module.MountedFiles is not available" エラーが発生する既知の問題があります。
-// 互換性のため false に設定し、標準の Cache API を使用します。
-env.useBrowserCache = true; // 標準の Cache API を使用
-env.useOriginPrivateFileSystem = false; 
+// v3では、外部データファイル(.onnx_data)を持つモデル（Gemma 2 2B等）の読み込みに
+// OPFS (Origin Private File System) が必須です。
+// これを false にすると "Module.MountedFiles is not available" エラーが発生します。
+env.useOriginPrivateFileSystem = true;
+
+// OPFSを使用する場合、通常の Cache API (useBrowserCache) は
+// 競合を避けるために false に設定します。
+env.useBrowserCache = false;
 
 const wasmPath = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2/dist/";
 
@@ -28,9 +30,16 @@ const CPU_INFERENCE_TIMEOUT_MS = 6000000;
 
 let generatorPromise = null;
 let currentGeneratorModelId = null;
+let lastToken = null;
 
 async function initGenerator(task, modelId, device, token = null) {
-    if (currentGeneratorModelId === modelId && generatorPromise) {
+    // Transformers.js v3 のグローバル設定にトークンを反映
+    // これにより pipeline 内部の個別の fetch リクエストにもトークンが適用されます
+    if (token) {
+        env.token = token;
+    }
+
+    if (currentGeneratorModelId === modelId && lastToken === token && generatorPromise) {
         return generatorPromise;
     }
 
@@ -43,6 +52,7 @@ async function initGenerator(task, modelId, device, token = null) {
     }
 
     currentGeneratorModelId = modelId;
+        lastToken = token;
 
     // デバイスとモデルに応じた最適な型(dtype)を選択
     // Gemma 2 2Bなどは q4f16 でないと動作しないことが多いですが、
@@ -55,15 +65,25 @@ async function initGenerator(task, modelId, device, token = null) {
         dtype: selectedDtype,
         token: token,
         progress_callback: (x) => {
-            if (x.status === 'init' && x.file && x.file.includes('.onnx_data')) {
-                // 外部データファイルのロード中であることを明示
-                postMessage({ status: 'loading', output: `外部重みデータをロード中: ${x.file}` });
+            const file = x.file || '';
+            if (x.status === 'cached') {
+                // キャッシュに存在することを明示
+                postMessage({ status: 'loading', output: `キャッシュを利用: ${file}` });
+            } else if (x.status === 'initiate') {
+                // 取得開始（ネットワーク確認中）
+                postMessage({ status: 'loading', output: `リポジトリ確認中: ${file}` });
             } else if (x.status === 'download') {
+                // 実際にネットワーク通信が発生している場合のみ「ダウンロード」と表現
+                const isMetadata = file.endsWith('.json') || file.endsWith('.txt') || file.endsWith('.py');
+                const label = isMetadata ? '設定をダウンロード中' : 'ネットワークから取得中';
                 const progressStr = (typeof x.progress === 'number' && !isNaN(x.progress)) ? ` (${Math.round(x.progress)}%)` : '';
-                postMessage({ status: 'loading', output: `モデルダウンロード中: ${x.file}${progressStr}` });
+                postMessage({ status: 'loading', output: `${label}: ${file}${progressStr}` });
+            } else if (x.status === 'done') {
+                postMessage({ status: 'loading', output: `完了: ${file}` });
             } else if (x.status === 'init') {
-                // initフェーズはダウンロード後またはキャッシュからの読み込み時
-                postMessage({ status: 'loading', output: `モデル初期化中: ${x.file || 'セッション作成中...'}` });
+                // セッションの初期化（GPU/メモリへの展開フェーズ）
+                const label = file.includes('.onnx_data') ? '外部重みデータを展開中' : 'モデル初期化中';
+                postMessage({ status: 'loading', output: `${label}: ${file || 'セッション作成中...'}` });
             }
         }
     };
@@ -132,34 +152,43 @@ self.onmessage = async (e) => {
                 generator.modelId = modelId;
             } catch (e) {
                 // 再試行を可能にするため、失敗したプロミスのキャッシュをクリア
-                generatorPromise = null;
-                currentGeneratorModelId = null;
+                generatorPromise = null; 
+                currentGeneratorModelId = null; 
+                lastToken = null;
+                env.token = null; // 失敗時は環境変数をリセット
 
                 const errorMsg = String(e); // e.message だけでなく Error 全体を文字列化して判定
-                const isAuthError = /401|403|404|unauthorized|forbidden|credentials|not found/i.test(errorMsg);
+                const isAuthError = /401|403|unauthorized|forbidden|credentials|login/i.test(errorMsg);
                 
                 // 技術的なセッション作成失敗（MountedFilesなど）
-                const isSessionError = errorMsg.includes('session') || errorMsg.includes('Deserialize') || errorMsg.includes('MountedFiles');
+                const isSessionError = errorMsg.includes('session') || errorMsg.includes('Deserialize') || errorMsg.includes('MountedFiles') || errorMsg.includes('NO_DEVICE_SPACE');
                 const isGated = modelId.toLowerCase().includes('gemma') || modelId.toLowerCase().includes('llama');
 
-                if (isAuthError || (isGated && !token)) {
-                    // 明らかな認証エラー、または承認が必要なモデルなのにトークンがない場合
-                    postMessage({ status: 'auth_error', modelId: modelId, error: errorMsg, isTechnical: false });
-                    return;
-                } else if (isSessionError && isGated) {
-                    // 技術的な失敗だが、Gatedモデルなので認証不足の可能性も示唆する
-                    postMessage({ status: 'auth_error', modelId: modelId, error: errorMsg, isTechnical: true });
-                    return;
-                } else {
-                    const isQuotaError = errorMsg.includes('quota') || 
+                const isQuotaError = errorMsg.includes('quota') || 
                                        errorMsg.includes('QuotaExceededError') || 
                                        errorMsg.includes('1588752864') ||
-                                       errorMsg.includes('DataError');
-                    if (isQuotaError) {
-                        const detail = `[キャッシュ容量不足/破損] モデルの保存または読み込みに失敗しました。容量制限（通常2GB）に達した可能性があります。「WebGPUモデルキャッシュをクリア」を実行してください。`;
-                        postMessage({ status: 'error', error: detail });
-                        return;
-                    }
+                                       errorMsg.includes('DataError') ||
+                                       errorMsg.includes('DEVICE_SPACE') ||
+                                       errorMsg.includes('0x80520010') ||
+                                       errorMsg.includes('No device space');
+
+                if (isQuotaError || (isSessionError && errorMsg.includes('Deserialize'))) {
+                    const detail = `[ストレージ異常/容量不足] ディスクが一杯か、ブラウザがモデルデータの書き込みを拒否しました。ブラウザの設定からデータを手動削除してください。 (Error: ${errorMsg})`;
+                    postMessage({ status: 'error', error: detail });
+                    return;
+                }
+
+                // Gatedモデル（要同意）でないのに 403 が出る場合は、認証の問題ではなくネットワーク遮断の可能性が高い
+                if (isAuthError && isGated) {
+                    postMessage({ status: 'auth_error', modelId: modelId, error: errorMsg, isTechnical: false });
+                    return;
+                } else if (isAuthError && !isGated) {
+                    // 公開モデルでの 403 は「アクセス制限（ネットワーク/プロキシ等）」として扱う
+                    throw new Error(`[Network/Access Denied] ${errorMsg}`);
+                } else {
+                    // isSessionError (セッション作成失敗) の場合も、Gatedモデルだからと決めつけず
+                    // 技術的なエラーとしてそのまま投げる。これにより、ダウンロード後の拒否が
+                    // 認証不備なのか、デバイスのメモリ不足(OOM)なのかをユーザーが判断しやすくする。
                     console.error('Model load failed:', e);
                     throw e;
                 }

@@ -12,7 +12,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo [1/2] Installing dependencies...
-call npm install
+call npm install --legacy-peer-deps
 
 echo [2/2] Transpiling TypeScript and Bundling...
 call npm run build

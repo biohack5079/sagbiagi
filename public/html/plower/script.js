@@ -69,40 +69,41 @@ async function clearWebGpuModelCache() {
         try {
             console.log("Starting WebGPU cache clear...");
             
-            // 1. すべての Cache API を走査して削除
-            const cacheKeys = await caches.keys();
-            for (const key of cacheKeys) {
-                if (key.includes('transformers') || key.includes('onnx')) {
-                    console.log(`Deleting cache: ${key}`);
-                    await caches.delete(key);
+            // 1. Cache API の削除
+            if (window.caches) {
+                const cacheKeys = await caches.keys();
+                for (const key of cacheKeys) {
+                    if (key.includes('transformers') || key.includes('onnx')) {
+                        console.log(`Deleting cache: ${key}`);
+                        await caches.delete(key).catch(e => console.warn(e));
+                    }
                 }
             }
             
             // 2. OPFS (Origin Private File System) のクリーンアップ
-            try {
+            if (navigator.storage && navigator.storage.getDirectory) {
                 const root = await navigator.storage.getDirectory();
-                // rag_sources 以外（モデルキャッシュ）をすべて消去
                 for await (const entry of root.values()) {
-                    if (entry.kind === 'directory' && entry.name !== 'rag_sources') {
-                        console.log(`Deleting OPFS dir: ${entry.name}`);
-                        await root.removeEntry(entry.name, { recursive: true });
-                    }
+                    try {
+                        if (entry.kind === 'directory' && entry.name !== 'rag_sources') {
+                            console.log(`Deleting OPFS dir: ${entry.name}`);
+                            await root.removeEntry(entry.name, { recursive: true });
+                        }
+                    } catch (e) { console.warn(`OPFS entry skip: ${entry.name}`, e); }
                 }
-            } catch (err) {
-                console.log("OPFS cleanup skipped or already clear.");
             }
 
-            // 3. 全ての IndexedDB の削除を試行 (ONNX Runtime / Transformers.js 用)
-            try {
+            // 3. IndexedDB の削除
+            if (window.indexedDB && indexedDB.databases) {
                 const dbs = await indexedDB.databases();
                 for (const dbInfo of dbs) {
-                    if (dbInfo.name.includes('onnx') || dbInfo.name.includes('transformers') || dbInfo.name.includes('ort')) {
-                        console.log(`Deleting IDB: ${dbInfo.name}`);
-                        indexedDB.deleteDatabase(dbInfo.name);
-                    }
+                    try {
+                        if (dbInfo.name.includes('onnx') || dbInfo.name.includes('transformers') || dbInfo.name.includes('ort')) {
+                            console.log(`Deleting IDB: ${dbInfo.name}`);
+                            indexedDB.deleteDatabase(dbInfo.name);
+                        }
+                    } catch (e) { console.warn(`IDB delete skip: ${dbInfo.name}`, e); }
                 }
-            } catch (err) {
-                console.log("IndexedDB cleanup skipped.");
             }
 
             alert(isEn 
@@ -1258,38 +1259,35 @@ async function sendToModel() {
         // GPT-2(Baseモデル)用のシンプルなプロンプト。
         prompt = `Context: ${context}\n\nQuestion: ${userInput}\n\nAnswer:`;
     } else {
-        // Instructモデル用: プロンプト自体に「System Instructions」という見出しを付けない（ロール分離に任せる）
-        prompt = `
-<Context>
+        // 指示が多すぎるとQwen 0.5Bが混乱するため、タスクを「抽出」に絞り込みます
+        prompt = `Based on the context below, answer the user's question.
+
+<CONTEXT>
 ${context}
-</Context>
+</CONTEXT>
 
-<UserQuestion>
+<QUESTION>
 ${userInput}
-</UserQuestion>
+</QUESTION>
 
-Please answer the question based on the context provided above.
-        
-        ---
-        ### Final Instruction:
-        ${languageSuffix}
-        Strictly output ONLY the answer to the question based on the provided context.
-        Be extremely precise: Copy numeric values, codes, and identifiers EXACTLY as they appear in the context.
-        Do NOT output any HTML tags, CSS, JavaScript, or source code snippets unless explicitly requested.`;
+### RULES:
+1. Copy numbers and codes EXACTLY as they appear in the <CONTEXT>.
+2. DO NOT create new codes. DO NOT use your own knowledge.
+3. Output ONLY the answer.
+
+${languageSuffix}`;
     }
     
     // スクロールを最下部へ移動させるヘルパー
     const scrollToBottom = () => {
-        // 1. ズーム時に入力欄に被らないよう、一時的に大きな余白を作る
-        document.body.style.paddingBottom = "40vh";
-
-        // 2. 回答エリアが画面の中央〜下部に来るように調整
-        responseParagraph.scrollIntoView({ behavior: 'auto', block: 'center' });
-
-        // 3. 全体のスクロール位置を調整（保険）
-        requestAnimationFrame(() => {
-            window.scrollTo(0, document.body.scrollHeight);
-        });
+        // 回答の末尾が入力欄に隠れないよう、画面の7割に相当する余白を一時的に確保
+        document.body.style.paddingBottom = "70vh";
+        
+        // スムーズスクロールを二重に適用して確実に最下部を表示
+        responseParagraph.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => {
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }, 100);
     };
 
     // --- 回答生成 ---
@@ -1452,7 +1450,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('resetDocsButton').addEventListener('click', resetDocuments);
     document.getElementById('saveOcrButton').addEventListener('click', saveOcrTextAsFile);
     document.getElementById('syncFolderButton').addEventListener('click', syncLocalFolder);
-    document.getElementById('clearWebGpuCacheButton').addEventListener('click', clearWebGpuModelCache);
+    
+    const clearWebGpuBtn = document.getElementById('clearWebGpuCacheButton');
+    if (clearWebGpuBtn) {
+        clearWebGpuBtn.style.whiteSpace = 'nowrap'; // 改行を防止
+        clearWebGpuBtn.addEventListener('click', clearWebGpuModelCache);
+    }
     
     // DOMロード後にイベントリスナーを登録 (安全策)
     const pasteArea = document.getElementById('pasteArea');

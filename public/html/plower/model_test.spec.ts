@@ -60,8 +60,10 @@ test.describe('Plower WebGPU Logic Verification', () => {
     await page.fill('#userInput', '秘密のコードは何？');
     await page.click('#sendButton');
 
-    // CPU推論(WASM)の極端な遅延を考慮
-    await expect(page.locator('#chatLog')).toContainText('9999', { timeout: 1500000 });
+    // 数値の正確性を検証 (Qwen 0.5B のハルシネーション対策済みか)
+    const chatLog = page.locator('#chatLog');
+    await expect(chatLog).toContainText('9999', { timeout: 1800000 });
+    await expect(chatLog).not.toContainText('9998'); 
     console.log('RAG file upload automation passed.');
   });
 

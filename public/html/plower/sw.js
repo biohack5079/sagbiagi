@@ -2,16 +2,18 @@ self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", (event) => {
     const { request } = event;
-    if (request.cache === "only-if-cached" && request.mode !== "same-origin") return;
+    
+    // ViteのHMR(hot-reload)や、特定のキャッシュリクエストは中継しない
+    if (request.url.includes('hmr') || (request.cache === "only-if-cached" && request.mode !== "same-origin")) return;
 
     event.respondWith(
         fetch(request).then((response) => {
-            // 状態が 0 (不透明) またはエラーレスポンスの場合は加工せずにそのまま返す
-            if (response.status === 0 || (!response.ok && response.status !== 206)) {
+            // 不透明なレスポンスやエラー（404等）はそのまま返す
+            if (response.status === 0 || !response.ok) {
                 return response;
             }
 
-            // 共有メモリ (SharedArrayBuffer) を利用するために必要なセキュリティヘッダーを注入
+            // SharedArrayBuffer (WebGPU/WASM) に必要なヘッダーを付与
             const newHeaders = new Headers(response.headers);
             newHeaders.set("Cross-Origin-Embedder-Policy", "require-corp");
             newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
@@ -21,6 +23,9 @@ self.addEventListener("fetch", (event) => {
                 statusText: response.statusText,
                 headers: newHeaders,
             });
-        }).catch(() => fetch(request)) // 失敗時のセーフティネット
+        }).catch((err) => {
+            // ネットワークエラー時はリトライせず、エラーをそのままブラウザに報告させる
+            throw err;
+        })
     );
 });

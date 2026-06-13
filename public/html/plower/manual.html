@@ -21,8 +21,10 @@
             box-shadow: 0 2px 10px rgba(0,0,0,0.05);
         }
         h1, h2, h3 { color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-        code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; font-family: monospace; }
-        pre { background: #2d3436; color: #dfe6e9; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 0.9em; }
+        code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+        p code, li code { background: #f3f4f6; color: #e83e8c; padding: 0.2em 0.4em; border-radius: 4px; font-size: 0.9em; font-weight: bold; }
+        pre { background: #0f172a; color: #38bdf8; padding: 20px; border-radius: 8px; overflow-x: auto; font-size: 1.1em; line-height: 1.7; border: 1px solid #334155; box-shadow: inset 0 2px 4px rgba(0,0,0,0.3); }
+        pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
         .btn {
             display: inline-block;
             background: #3498db;
@@ -44,7 +46,21 @@
         <h1 id="mainTitle">Plower RAG 使い方説明書</h1>
 
         <div class="section">
-            <h2 id="hfTitle">1. Hugging Face Spacesへのモデル導入</h2>
+            <h2 id="ollamaTitle">1. ローカルモデルの利用 (Ollama)</h2>
+            <p id="ollamaDesc">Windowsユーザーは、<a href="https://ollama.com/" target="_blank">Ollama</a>をインストールすることで、PCのローカルリソースで高速な推論が可能です。Sagbi全体で標準採用されている <code>gemma3:4b-it-q4_K_M</code> は、最も推奨されるモデルです。</p>
+            <pre><code id="ollamaCmds"># 標準モデル (Sagbi全体で利用可能・推奨)
+ollama pull gemma3:4b-it-q4_K_M
+
+# その他の対応モデル
+ollama pull gemma:7b
+ollama pull gemma3:12b
+ollama pull gpt-oss:20b
+ollama pull gpt-oss:120b
+ollama pull sarasina</code></pre>
+        </div>
+
+        <div class="section">
+            <h2 id="hfTitle">2. Hugging Face Spacesへのモデル導入</h2>
             <p id="hfDesc">自前の <strong>Gemma</strong> モデルをHF Spaces上のOllamaで動かす手順:</p>
             <ol id="hfSteps">
                 <li id="hfStep1">HF Spaceのリポジトリをダウンロード（クローン）します。</li>
@@ -56,7 +72,7 @@
         </div>
 
         <div class="section">
-            <h2 id="srcTitle">2. RAGソースの設定</h2>
+            <h2 id="srcTitle">3. RAGソースの設定</h2>
             <ul>
                 <li id="srcUpload"><strong>アップロード:</strong> 「RAGソース」からローカルのテキストファイルを選択します。</li>
                 <li id="srcSync"><strong>同期:</strong> 「ローカルフォルダ同期」はWindows（PC版Chrome/Edge）向けの機能です。ローカルの特定のフォルダをRAGソースの置き場として自動同期します。</li>
@@ -66,12 +82,12 @@
         </div>
 
         <div class="section">
-            <h2 id="storageTitle">3. ストレージと永続化</h2>
+            <h2 id="storageTitle">4. ストレージと永続化</h2>
             <p id="storageDesc">「永続化」ボタンを押してブラウザのストレージ制限を解除（永続化を許可）すると、GemmaやLlamaといった巨大なモデルを安定して利用できるようになります。許可されない場合は、<code>chrome://site-engagement/</code> を開き、サイトの信頼スコアが十分か確認してください。</p>
         </div>
 
         <div class="section">
-            <h2 id="qTitle">4. 質問する</h2>
+            <h2 id="qTitle">5. 質問する</h2>
             <p id="qDesc">質問を入力して送信します。Plowerは読み込まれたすべての文書をコンテキストとして送信します。モデルは提供された情報に基づいて回答します。</p>
         </div>
 
@@ -85,21 +101,24 @@
                 title: 'Plower RAG - Usage Guide',
                 back: '← Back to App',
                 mainTitle: 'Plower RAG Usage Guide',
-                hfTitle: '1. Model Deployment on Hugging Face Spaces',
+                ollamaTitle: '1. Local Model Setup (Ollama)',
+                ollamaDesc: 'Windows users can install <a href="https://ollama.com/" target="_blank">Ollama</a> to perform high-speed inference using local resources. <code>gemma3:4b-it-q4_K_M</code> is the standard model recommended for the entire Sagbi system.',
+                ollamaCmds: '# Standard Model (Recommended for Sagbi)\nollama pull gemma3:4b-it-q4_K_M\n\n# Other Models\nollama pull gemma:7b\nollama pull gemma3:12b\nollama pull gpt-oss:20b\nollama pull gpt-oss:120b\nollama pull sarasina',
+                hfTitle: '2. Model Deployment on Hugging Face Spaces',
                 hfDesc: 'Steps to run your own <strong>Gemma</strong> model via Ollama on HF Spaces:',
                 hfStep1: 'Download (clone) your Hugging Face Space repository.',
                 hfStep2: 'Keep only the <code>.git</code> folder and delete all other files.',
                 hfStep3: 'Replace them with files from <a href="https://github.com/biohack5079/sagbi/tree/main/public/html/plower/hf/plower" target="_blank">this GitHub repository</a>.',
                 hfStep4: 'Commit and re-deploy (push). This will automatically install the <code>gemma3:4b-it-q4_K_M</code> model.',
                 hfStep5: 'Enter your Space URL into the "HF / Ollama URL" field in Plower.',
-                srcTitle: '2. Document Sources',
+                srcTitle: '3. Document Sources',
                 srcUpload: '<strong>Upload:</strong> Click "Choose Files" to add local text files.',
                 srcSync: '<strong>Sync:</strong> "Sync Local Folder" is currently for Windows (PC Chrome/Edge). It automatically syncs a specific local folder as your RAG source.',
                 srcBookmarklet: '<strong>Browser Link:</strong> Drag and drop the "Browser Link" to your bookmark bar. You can then scan the page you are viewing and add it to RAG sources instantly.',
                 srcOcr: '<strong>Images:</strong> Paste an image to use it as multimodal context for LLM analysis.',
-                storageTitle: '3. Storage & Persistence',
+                storageTitle: '4. Storage & Persistence',
                 storageDesc: 'The "Persistence" button can expand browser storage, enabling large models like Gemma or Llama. If denied, check your score at <code>chrome://site-engagement/</code>.',
-                qTitle: '4. Asking Questions',
+                qTitle: '5. Asking Questions',
                 qDesc: 'Enter your question in the box. Plower sends all loaded documents as context. The model will answer based <em>only</em> on those documents.'
             };
 
@@ -108,6 +127,9 @@
             document.getElementById('backBtn').textContent = t.back;
             document.getElementById('backBtnBottom').textContent = t.back;
             document.getElementById('mainTitle').textContent = t.mainTitle;
+            document.getElementById('ollamaTitle').textContent = t.ollamaTitle;
+            document.getElementById('ollamaDesc').innerHTML = t.ollamaDesc;
+            document.getElementById('ollamaCmds').textContent = t.ollamaCmds;
             document.getElementById('hfTitle').textContent = t.hfTitle;
             document.getElementById('hfDesc').innerHTML = t.hfDesc;
             document.getElementById('hfStep1').textContent = t.hfStep1;

@@ -10,9 +10,8 @@ env.allowLocalModels = false;
 // これを false にすると "Module.MountedFiles is not available" エラーが発生します。
 env.useOriginPrivateFileSystem = true;
 
-// OPFSを使用する場合、通常の Cache API (useBrowserCache) は
-// 競合を避けるために false に設定します。
-env.useBrowserCache = false;
+// Cache APIも併用可能。メタデータなどは標準キャッシュ、重いデータはOPFSという使い分けを許可する。
+env.useBrowserCache = true;
 
 const wasmPath = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2/dist/";
 
@@ -161,19 +160,28 @@ self.onmessage = async (e) => {
                 const isAuthError = /401|403|unauthorized|forbidden|credentials|login/i.test(errorMsg);
                 
                 // 技術的なセッション作成失敗（MountedFilesなど）
-                const isSessionError = errorMsg.includes('session') || errorMsg.includes('Deserialize') || errorMsg.includes('MountedFiles') || errorMsg.includes('NO_DEVICE_SPACE');
+                const isSessionError = errorMsg.includes('session') || errorMsg.includes('Deserialize') || 
+                                       errorMsg.includes('MountedFiles') || errorMsg.includes('NO_DEVICE_SPACE') || 
+                                       errorMsg.includes('mounted') || errorMsg.includes('abort');
+
                 const isGated = modelId.toLowerCase().includes('gemma') || modelId.toLowerCase().includes('llama');
 
                 const isQuotaError = errorMsg.includes('quota') || 
                                        errorMsg.includes('QuotaExceededError') || 
+                                       errorMsg.includes('NO_DEVICE_SPACE') ||
                                        errorMsg.includes('1588752864') ||
                                        errorMsg.includes('DataError') ||
                                        errorMsg.includes('DEVICE_SPACE') ||
                                        errorMsg.includes('0x80520010') ||
                                        errorMsg.includes('No device space');
 
-                if (isQuotaError || (isSessionError && errorMsg.includes('Deserialize'))) {
-                    const detail = `[ストレージ異常/容量不足] ディスクが一杯か、ブラウザがモデルデータの書き込みを拒否しました。ブラウザの設定からデータを手動削除してください。 (Error: ${errorMsg})`;
+                if (isQuotaError || isSessionError || errorMsg.includes('MountedFiles')) {
+                    let detail = `[ストレージ異常/容量不足] ディスクが一杯か、ブラウザがモデルデータの書き込みを拒否しました。 (Error: ${errorMsg})`;
+                    if (errorMsg.includes('MountedFiles')) {
+                        detail = `[OPFSマウント失敗] ブラウザが仮想ファイルシステムの作成を拒否しました。容量は十分ですが、ブラウザの設定やセキュリティ制約（COOP/COEPヘッダーの欠如など）により、このサイトからのディスク書き込みがブロックされています。`;
+                    } else if (isQuotaError) {
+                        detail = `[ストレージ容量不足] ディスクが一杯です。不要なモデルを削除してください。`;
+                    }
                     postMessage({ status: 'error', error: detail });
                     return;
                 }

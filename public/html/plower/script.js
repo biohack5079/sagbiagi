@@ -119,9 +119,54 @@ async function clearWebGpuModelCache() {
         }
     }
 }
+// 動的に作成されるHTML（エラー通知の赤いボタンなど）から呼び出せるようにグローバルに公開
+window.clearWebGpuModelCache = clearWebGpuModelCache;
 
 // --- OPFSからの文書ロードとファイル一覧の表示 ---
 async function loadDocuments() {
+    // 127.0.0.1 使用時と隔離状態のチェック
+    const isIsolated = window.crossOriginIsolated;
+    if (window.location.hostname === '127.0.0.1') {
+        const localhostMsg = isEn 
+            ? "⚠️ Using 127.0.0.1. Please switch to 'localhost' for full OPFS support."
+            : "⚠️ 127.0.0.1 でアクセス中です。OPFSを正常に動作させるため、URLの 127.0.0.1 を localhost に書き換えてください。";
+        console.warn(localhostMsg);
+    }
+    console.log(`[Storage] Cross-Origin Isolated: ${isIsolated}`);
+    if (!isIsolated) console.warn("Performance and OPFS might be limited. COOP/COEP headers are missing.");
+
+    // ストレージの状態を確認（ユーザーの不安解消用）
+    if (navigator.storage && navigator.storage.estimate) {
+        navigator.storage.estimate().then(async estimate => {
+            const usage = estimate.usage || 0;
+            const quota = (estimate.quota / 1024 / 1024 / 1024).toFixed(2);
+            const usedGB = usage / 1024 / 1024 / 1024;
+
+            // ストレージの永続化状態を確認
+            let persisted = false;
+            if (navigator.storage.persisted) {
+                persisted = await navigator.storage.persisted();
+            }
+
+            const used = (usedGB < 0 || usedGB > 1000) ? "Fatal" : usedGB.toFixed(2);
+            // クォータが10GB程度で止まっている場合は一時ストレージ制限を受けています
+            const storageText = `[Storage] Used: ${used} GB / Quota: ${quota} GB (Persisted: ${persisted})`;
+            console.log(storageText);
+
+            // UIにストレージ情報を表示（もし要素があれば）
+            const storageInfoEl = document.getElementById('storageInfo');
+            if (storageInfoEl) {
+                storageInfoEl.innerHTML = `容量: ${used}/${quota}GB ${persisted ? '✅永続化済' : '⚠️一時的'}`;
+                storageInfoEl.style.color = persisted ? '#2e7d32' : '#d32f2f';
+                storageInfoEl.title = persisted ? "ブラウザから削除されにくい設定です" : "容量制限が厳しく、ブラウザの判断で削除される可能性があります。";
+            }
+
+            // 5GB未満、または永続化されていない場合に警告
+            if (estimate.quota < 5 * 1024 * 1024 * 1024 && !persisted) {
+                console.warn("Storage quota is low. Large models like Gemma may fail.");
+            }
+        });
+    }
     try {
         const ragDir = await getRagDir();
         persistentDocuments = [];
@@ -1415,9 +1460,16 @@ Answer:`;
 
         if (safeErrorBase.includes('Module.MountedFiles is not available')) {
             errorHint += `<br><br>💡 <strong>ファイルシステムアクセスエラーの可能性があります:</strong><br>`;
-            errorHint += isEn
-                ? `The model failed to link its weight files. This usually happens in Incognito mode or browsers with restricted disk access. Please try in a normal window or clear WebGPU cache.`
-                : `モデルの重みファイルの連結に失敗しました。シークレットモードや、ディスクアクセスが制限された環境で発生しやすいエラーです。通常のウィンドウで試すか、「WebGPUモデルキャッシュをクリア」を実行してください。`;
+            errorHint += isEn 
+                ? `Space is sufficient, but the browser blocked OPFS. Use "localhost" and ensure COOP/COEP headers are set.`
+                : `容量は十分（${document.getElementById('storageInfo')?.textContent || '50GB+'}）ですが、ブラウザが仮想ディスクの作成を拒否しました。<br><br>
+                   <strong>重要な対策:</strong><br>
+                   1. URLの <code>127.0.0.1</code> を <strong><code>localhost</code></strong> に書き換えて開き直してください。<br>
+                   2. ブラウザの「設定 > プライバシー > サイト設定」で、このサイトの権限をリセットしてください。<br>
+                   2. シークレットモードを解除してください。<br>
+                   <br>
+                   <strong>開発者向け（Live Server等をお使いの場合）:</strong><br>
+                   ブラウザが隔離状態（Cross-Origin Isolated: false）のためOPFSがブロックされています。VS Codeの拡張機能「Shared Array Buffer Enabler」を入れるか、サーバー側で COOP/COEP ヘッダーを有効にしてください。`;
             errorHint += `<br>👉 <button onclick="clearWebGpuModelCache()" style="background:#d32f2f; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; margin-top:5px;">${isEn ? 'Clear WebGPU Cache Now' : '今すぐWebGPUキャッシュをクリアする'}</button>`;
         }
         // HTMLタグ（errorHint）をエスケープせずに結合して表示
@@ -1434,22 +1486,23 @@ Answer:`;
 
 // --- 初期化とイベントリスナー設定 ---
 document.addEventListener('DOMContentLoaded', () => {
-    // ストレージの空き容量を確認（ユーザーの不安解消用）
-    if (navigator.storage && navigator.storage.estimate) {
-        navigator.storage.estimate().then(estimate => {
-            const usage = estimate.usage || 0;
-            const quota = (estimate.quota / 1024 / 1024 / 1024).toFixed(2);
-            const usedGB = usage / 1024 / 1024 / 1024;
-            
-            // 1000GBを超える、または負の値などの異常値はブラウザの計算ミスとして伏せる
-            // 異常な数値や、クォータの90%以上を消費している場合に警告
-            const used = (usedGB < 0 || usedGB > 1000) ? "Fatal/Full" : usedGB.toFixed(2);
-            const storageText = `[Storage] Used: ${used} GB / Quota: ${quota} GB`;
-            console.log(storageText);
-            if (estimate.quota < 2 * 1024 * 1024 * 1024) {
-                console.warn("Storage quota is low. Large models like Gemma may fail.");
+    // ストレージの永続化をリクエスト
+    if (navigator.storage && navigator.storage.persist) {
+        const requestPersist = async () => {
+            const granted = await navigator.storage.persist();
+            if (granted) {
+                console.log("[Storage] Persistent storage granted.");
+                loadDocuments(); // 表示を更新
             }
-        });
+        };
+        
+        // 自動リクエスト
+        requestPersist();
+
+        // ユーザーがUIを触ったときにもう一度リクエスト（ブラウザはユーザー操作に伴うリクエストを承認しやすいため）
+        document.addEventListener('click', () => {
+            if (!navigator.storage.persisted || !navigator.storage.persisted()) requestPersist();
+        }, { once: true });
     }
 
     // --- ブックマークレットのURLを現在の環境（localhostか公開URLか）に合わせて動的に更新 ---

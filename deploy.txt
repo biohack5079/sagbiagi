@@ -35,6 +35,8 @@ npm run dev
 npm run preview
 ./build_frontend.sh
 
+http://localhost:5501/public/html/plower/index.html
+
 npm run check
 ./start_sagbi.sh
 

@@ -45,9 +45,9 @@ h1 {
 /* --- RAGコントロールヘッダー（3段目） --- */
 .rag-controls-header {
     display: flex;
-    flex-wrap: wrap; /* 幅が足りない場合に改行を許可 */
+    flex-wrap: nowrap; /* 幅が足りない場合に改行を許可 */
     align-items: center; /* 要素の垂直方向を中央で揃える */
-    gap: 10px; 
+    gap: 8px; /* 要素間の間隔を少し縮小 */
     margin-top: 20px; /* H1からの間隔を確保 */
     margin-bottom: 20px; /* 次のセクションとの間隔 */
     padding: 10px;
@@ -75,6 +75,8 @@ h1 {
     border: 1px solid #ccc;
     border-radius: 4px;
     background: white;
+    flex-shrink: 1; /* 縮小を許可 */
+    max-width: 200px; /* 最大幅を設定して、他の要素にスペースを譲る */
 }
 
 /* ------------------------------------------------------------- */
@@ -133,7 +135,7 @@ h1 {
     background: #eef;
     padding: 10px;
     border: 1px solid #ccc;
-    min-height: 50px;
+    min-height: 0; /* 最小高さを0にして、内容に合わせて高さを調整 */
     max-height: 300px;
     overflow-y: auto;
 }

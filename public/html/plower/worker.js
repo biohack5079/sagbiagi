@@ -9,6 +9,7 @@ env.useBrowserCache = true;
 // OPFSは巨大モデルのロードに有利ですが、外部データファイル(.onnx_data)を持つモデルで
 // "Module.MountedFiles is not available" エラーが発生する既知の問題があります。
 // 互換性のため false に設定し、標準の Cache API を使用します。
+env.useBrowserCache = true; // 標準の Cache API を使用
 env.useOriginPrivateFileSystem = false; 
 
 const wasmPath = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2/dist/";
@@ -32,30 +33,37 @@ async function initGenerator(task, modelId, device, token = null) {
     if (currentGeneratorModelId === modelId && generatorPromise) {
         return generatorPromise;
     }
-    
+
     // 別のモデルをロード済みの場合は、WASMメモリ解放のため可能であれば破棄(dispose)する
     if (generatorPromise) {
         try {
             const oldGen = await generatorPromise;
             if (typeof oldGen.dispose === 'function') oldGen.dispose();
-        } catch(e) {}
+        } catch (e) { }
     }
-    
+
     currentGeneratorModelId = modelId;
+
+    // デバイスとモデルに応じた最適な型(dtype)を選択
+    // Gemma 2 2Bなどは q4f16 でないと動作しないことが多いですが、
+    // WebGPUが使えない(WASM)環境ではメモリ節約のため q4 を優先します。
+    const isGemma2 = modelId.toLowerCase().includes('gemma-2');
+    const selectedDtype = (device === 'webgpu' || isGemma2) ? 'q4f16' : 'q4';
+
     const options = {
         device: device,
-        // Gemma 2シリーズはonnx-communityにてq4f16形式で提供されているため、CPU実行時もq4f16を指定する
-        dtype: (device === 'webgpu' || modelId.toLowerCase().includes('gemma')) ? 'q4f16' : 'q4',
+        dtype: selectedDtype,
         token: token,
         progress_callback: (x) => {
-            if (x.status === 'download') {
+            if (x.status === 'init' && x.file && x.file.includes('.onnx_data')) {
+                // 外部データファイルのロード中であることを明示
+                postMessage({ status: 'loading', output: `外部重みデータをロード中: ${x.file}` });
+            } else if (x.status === 'download') {
                 const progressStr = (typeof x.progress === 'number' && !isNaN(x.progress)) ? ` (${Math.round(x.progress)}%)` : '';
                 postMessage({ status: 'loading', output: `モデルダウンロード中: ${x.file}${progressStr}` });
             } else if (x.status === 'init') {
                 // initフェーズはダウンロード後またはキャッシュからの読み込み時
-                postMessage({ status: 'loading', output: `モデル初期化中 (キャッシュから読み込み): ${x.file || '不明なファイル'}` });
-            } else if (x.status === 'init') {
-                postMessage({ status: 'loading', output: `モデル構築中...` });
+                postMessage({ status: 'loading', output: `モデル初期化中: ${x.file || 'セッション作成中...'}` });
             }
         }
     };
@@ -120,37 +128,39 @@ self.onmessage = async (e) => {
             try {
                 postMessage({ status: 'loading', output: `初期化中... (エンジン: ${currentDevice.toUpperCase()})` });
                 generator = await initGenerator(task, modelId, currentDevice, token);
+                if (!generator) throw new Error("Generator initialization failed.");
                 generator.modelId = modelId;
             } catch (e) {
-                let errorMsg = e.message || '';
-                const isAuthError = errorMsg.includes('401') || errorMsg.includes('403') || errorMsg.includes('404') || errorMsg.includes('Unauthorized') || errorMsg.includes('Forbidden') || errorMsg.includes('Credentials') || errorMsg.includes('not found');
+                // 再試行を可能にするため、失敗したプロミスのキャッシュをクリア
+                generatorPromise = null;
+                currentGeneratorModelId = null;
 
+                let errorMsg = e.message || '';
+                const isAuthError = /401|403|404|unauthorized|forbidden|credentials|not found/i.test(errorMsg);
+                
+                // 技術的なセッション作成失敗（MountedFilesなど）
+                const isSessionError = errorMsg.includes('session') || errorMsg.includes('Deserialize') || errorMsg.includes('MountedFiles');
                 const isGated = modelId.toLowerCase().includes('gemma') || modelId.toLowerCase().includes('llama');
 
-                if (isAuthError) {
-                    // 公開モデル(GPT-2等)で、かつトークンが設定されている場合に401/403が出たら、
-                    // 保存されているトークンが「腐っている」可能性があるため、トークンなしで1回リトライする
-                    if (!isGated && token) {
-                        console.log('Public model auth error. Retrying without token...');
-                        try {
-                            generator = await initGenerator(task, modelId, currentDevice, null);
-                            generator.modelId = modelId;
-                        } catch (retryErr) {
-                            postMessage({ status: 'auth_error', modelId: modelId, error: retryErr.message });
-                            return;
-                        }
-                    } else {
-                        generatorPromise = null; 
-                        currentGeneratorModelId = null;
-                        postMessage({ status: 'auth_error', modelId: modelId, error: errorMsg });
-                        return;
-                    }
+                if (isAuthError || (isGated && !token)) {
+                    // 明らかな認証エラー、または承認が必要なモデルなのにトークンがない場合
+                    postMessage({ status: 'auth_error', modelId: modelId, error: errorMsg, isTechnical: false });
+                    return;
+                } else if (isSessionError && isGated) {
+                    // 技術的な失敗だが、Gatedモデルなので認証不足の可能性も示唆する
+                    postMessage({ status: 'auth_error', modelId: modelId, error: errorMsg, isTechnical: true });
+                    return;
                 } else {
                     // メモリ不足やストレージ（OPFS）関連のエラーかどうかを判定
                     const isResourceError = /memory|quota|allocation|out of|buffer/i.test(errorMsg);
                     
                     if (isResourceError) {
                         const detail = `[ストレージ/メモリ上限] OPFS(ブラウザ保存)またはGPUメモリの空きが足りません。\n・PCの空き容量を確認してください。\n・ブラウザの他タブ(YouTube等)を閉じてください。\n(詳細: ${errorMsg})`;
+                        postMessage({ status: 'error', error: detail });
+                        return;
+                    }
+                    if (errorMsg.includes('QuotaExceededError') || errorMsg.includes('cache')) {
+                        const detail = `[キャッシュ容量不足] ブラウザのストレージ制限に達しました。「WebGPUモデルキャッシュをクリア」を実行して空き容量を確保してください。`;
                         postMessage({ status: 'error', error: detail });
                         return;
                     }

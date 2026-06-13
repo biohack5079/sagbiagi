@@ -70,13 +70,24 @@ async function clearWebGpuModelCache() {
             const cacheName = 'transformers-cache'; // @huggingface/transformersのデフォルトキャッシュ名
             const deleted = await caches.delete(cacheName);
             
-            // OPFS内のONNXモデルディレクトリも削除して完全にクリーンにする
+            // OPFS (Origin Private File System) のクリーンアップ
             try {
                 const root = await navigator.storage.getDirectory();
                 await root.removeEntry('onnx', { recursive: true });
-                console.log("OPFS 'onnx' directory deleted.");
             } catch (err) {
                 console.log("OPFS 'onnx' directory not found or already clear.");
+            }
+
+            // IndexedDB (ONNX Runtime 内部で使用される場合がある) の削除
+            try {
+                const dbs = await indexedDB.databases();
+                for (const dbInfo of dbs) {
+                    if (dbInfo.name.includes('onnx') || dbInfo.name.includes('transformers')) {
+                        indexedDB.deleteDatabase(dbInfo.name);
+                    }
+                }
+            } catch (err) {
+                console.log("IndexedDB cleanup skipped.");
             }
 
             alert(isEn 
@@ -406,7 +417,7 @@ function showRenameDialog(titleText, initialValue) {
 }
 
 // Hugging Face 認証エラー用のダイアログを表示し、トークンの入力を待つ
-async function showAuthDialog(modelId) {
+async function showAuthDialog(modelId, technicalError = "") {
     return new Promise((resolve, reject) => {
         const overlay = document.createElement('div');
         overlay.style.position = 'fixed';
@@ -1188,7 +1199,14 @@ async function sendToModel() {
     // 画像データ（Base64文字列）が混ざるとプロンプトが巨大になり、AIが混乱するため、[Image Data]というラベルに置き換える。
     let contextParts = [];
     for (const docMeta of prioritizedDocs) {
-        const content = await getDocumentContent(docMeta.name);
+        let content = "";
+        // 「貼付けテキスト(一時)」の場合はOPFSではなく、docMeta自身が持っているcontentを使用する
+        if (docMeta.content !== undefined) {
+            content = docMeta.content;
+        } else {
+            content = await getDocumentContent(docMeta.name);
+        }
+
         if (content.startsWith('data:image/')) {
             // 質問の中でファイル名が言及されている画像を優先的にVision入力として選択
             const isMentioned = userInput.toLowerCase().includes(docMeta.name.toLowerCase()) || 
@@ -1357,7 +1375,8 @@ document.addEventListener('DOMContentLoaded', () => {
         navigator.storage.estimate().then(estimate => {
             const used = (estimate.usage / 1024 / 1024 / 1024).toFixed(2);
             const quota = (estimate.quota / 1024 / 1024 / 1024).toFixed(2);
-            console.log(`[Storage] Used: ${used} GB / Quota: ${quota} GB`);
+            const storageText = `[Storage] Used: ${used} GB / Quota: ${quota} GB`;
+            console.log(storageText);
             if (estimate.quota < 2 * 1024 * 1024 * 1024) {
                 console.warn("Storage quota is low. Large models like Gemma may fail.");
             }

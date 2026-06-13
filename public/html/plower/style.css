@@ -26,24 +26,35 @@ h1 {
 /* --- RAGコントロールヘッダーの修正スタイル (レイアウト崩れ対策) --- */
 .rag-controls-header {
     display: flex; /* 要素を横並びにする */
+    flex-wrap: wrap; /* 折り返しを許可 */
     align-items: center; /* 垂直方向の中央揃え */
-    gap: 15px; /* 要素間の間隔 */
+    gap: 10px; /* 要素間の間隔 */
     margin-top: 20px; /* H1からの間隔を確保 */
     margin-bottom: 20px; /* 次のセクションとの間隔 */
+    padding: 10px;
+    background: #f9f9f9;
+    border-radius: 8px;
 }
 
 /* rag-controls-header内のラベルは、Flexboxで位置を揃えるため、標準のmarginをリセット */
 .rag-controls-header label {
-    margin-top: 0;
+    margin: 0;
+    white-space: nowrap;
 }
 
-/* リセットボタンのスタイルも、Flexbox制御のためにマージンをリセット */
-#resetDocsButton {
-    background-color: #dc3545; /* 赤色 */
-    padding: 8px 15px;
-    margin-left: 0; 
-    margin-top: 0; 
+/* ファイル入力のスタイル調整 */
+#fileInput {
+    margin: 0;
+    height: 40px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: white;
 }
+
 /* ------------------------------------------------------------- */
 
 
@@ -140,14 +151,26 @@ select {
 }
 
 button {
-    padding: 10px 20px;
+    padding: 0 20px;
     background-color: #4CAF50;
     color: white;
     border: none;
     cursor: pointer;
     border-radius: 4px;
-    margin-top: 10px;
-    margin-right: 5px;
+    margin: 0;
+    height: 40px;
+    min-width: 140px;
+    font-size: 14px;
+    font-weight: bold;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+    transition: background-color 0.2s;
+}
+
+#resetDocsButton {
+    background-color: #dc3545; /* 赤色 */
 }
 
 #saveOcrButton {

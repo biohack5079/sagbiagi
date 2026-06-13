@@ -150,20 +150,65 @@ async function loadDocuments() {
 
             const used = (usedGB < 0 || usedGB > 1000) ? "Fatal" : usedGB.toFixed(2);
             // クォータが10GB程度で止まっている場合は一時ストレージ制限を受けています
-            const storageText = `[Storage] Used: ${used} GB / Quota: ${quota} GB (Persisted: ${persisted})`;
+            const hasGpu = !!navigator.gpu;
+            const storageText = `[Storage] Used: ${used} GB / Quota: ${quota} GB (Persisted: ${persisted}) | Isolated: ${isIsolated} | WebGPU: ${hasGpu}`;
             console.log(storageText);
 
             // UIにストレージ情報を表示（もし要素があれば）
             const storageInfoEl = document.getElementById('storageInfo');
-            if (storageInfoEl) {
-                storageInfoEl.innerHTML = `容量: ${used}/${quota}GB ${persisted ? '✅永続化済' : '⚠️一時的'}`;
-                storageInfoEl.style.color = persisted ? '#2e7d32' : '#d32f2f';
-                storageInfoEl.title = persisted ? "ブラウザから削除されにくい設定です" : "容量制限が厳しく、ブラウザの判断で削除される可能性があります。";
+            if (!storageInfoEl) {
+                const container = document.getElementById('statusBar');
+                if (!container) return;
+
+                const span = document.createElement('span');
+                span.id = 'storageInfo';
+                span.style.cssText = 'display:inline-block; font-size:0.9em; font-weight:normal; vertical-align:middle;';
+                container.appendChild(span);
             }
 
-            // 5GB未満、または永続化されていない場合に警告
-            if (estimate.quota < 5 * 1024 * 1024 * 1024 && !persisted) {
-                console.warn("Storage quota is low. Large models like Gemma may fail.");
+            const targetEl = document.getElementById('storageInfo');
+            if (targetEl) {
+                const isolationLabel = isIsolated ? (isEn ? '🛡️Isolated' : '🛡️隔離ON') : (isEn ? '🔓Non-Isolated' : '🔓隔離OFF');
+                targetEl.innerHTML = `容量: ${used}/${quota}GB ${persisted ? '✅永続化済' : '⚠️一時的'} | ${isolationLabel}`;
+
+                // 永続化リクエストボタンの追加
+                if (!persisted) {
+                    const btn = document.createElement('button');
+                    btn.textContent = isEn ? 'Unlock Disk Space (Request Persistence)' : 'ディスク容量を解放 (永続化リクエスト)';
+                    btn.style.cssText = 'display:inline-block; margin-left:8px; background:#d32f2f; color:white; border:none; border-radius:4px; padding:2px 8px; cursor:pointer; font-size:0.9em; vertical-align:middle; font-weight:bold;';
+                    
+                    btn.onmouseover = () => btn.style.background = '#b71c1c';
+                    btn.onmouseout = () => btn.style.background = '#d32f2f';
+
+                    btn.onclick = async (e) => {
+                        e.stopPropagation();
+                        try {
+                            // ユーザーの明示的なクリック操作内でのみリクエストが有効
+                            const granted = await navigator.storage.persist();
+                            if (granted) {
+                                alert(isEn ? "Persistence enabled! Reloading to apply large quota..." : "永続化が許可されました！クォータ拡大のためリロードします。");
+                                location.reload();
+                            } else {
+                                const msg = isEn 
+                                    ? "Chrome denied the request (Site Engagement Score too low).\n\nHow to fix:\n1. BOOKMARK this page (critical for Chrome).\n2. Click buttons and interact with the page for 1 minute.\n3. Or, click the 'Install' icon in the address bar to run as an App.\n4. Then, click this button again."
+                                    : "Chromeによって拒否されました（サイトの信頼スコアが不足しています）。\n\n【解決策】\n1. このページを「ブックマーク」してください。\n2. 数分間、ページ内で操作（ボタンクリックや入力等）を行ってください。\n3. 可能であれば、アドレスバー右端の「インストール」アイコンからアプリ化してください（即座に許可されます）。\n4. その後、もう一度このボタンを押してください。";
+                                alert(msg);
+                                console.info("Check your engagement score at: chrome://site-engagement/");
+                            }
+                        } catch (err) {
+                            console.error("Persistence request error:", err);
+                        }
+                    };
+                    targetEl.appendChild(btn);
+                }
+
+                targetEl.style.color = persisted ? '#2e7d32' : '#d32f2f';
+                targetEl.title = persisted ? "ブラウザから削除されにくい設定です" : "容量制限が厳しく、ブラウザの判断で削除される可能性があります。";
+            }
+
+            // 20GB未満、または永続化されていない場合に警告 (Gemma 2等の巨大モデル用)
+            if (estimate.quota < 20 * 1024 * 1024 * 1024 && !persisted) {
+                console.warn(`[Storage] Chrome has restricted quota to ${quota}GB. Click 'Enable Persistence' to unlock full disk space.`);
             }
         });
     }
@@ -1461,15 +1506,12 @@ Answer:`;
         if (safeErrorBase.includes('Module.MountedFiles is not available')) {
             errorHint += `<br><br>💡 <strong>ファイルシステムアクセスエラーの可能性があります:</strong><br>`;
             errorHint += isEn 
-                ? `Space is sufficient, but the browser blocked OPFS. Use "localhost" and ensure COOP/COEP headers are set.`
+                ? `Space is sufficient, but the browser blocked OPFS. SharedArrayBuffer is likely disabled. The app will now try to auto-fix this with a Service Worker.`
                 : `容量は十分（${document.getElementById('storageInfo')?.textContent || '50GB+'}）ですが、ブラウザが仮想ディスクの作成を拒否しました。<br><br>
                    <strong>重要な対策:</strong><br>
-                   1. URLの <code>127.0.0.1</code> を <strong><code>localhost</code></strong> に書き換えて開き直してください。<br>
-                   2. ブラウザの「設定 > プライバシー > サイト設定」で、このサイトの権限をリセットしてください。<br>
-                   2. シークレットモードを解除してください。<br>
-                   <br>
-                   <strong>開発者向け（Live Server等をお使いの場合）:</strong><br>
-                   ブラウザが隔離状態（Cross-Origin Isolated: false）のためOPFSがブロックされています。VS Codeの拡張機能「Shared Array Buffer Enabler」を入れるか、サーバー側で COOP/COEP ヘッダーを有効にしてください。`;
+                   1. 現在 <code>localhost</code> を使用していますが、<strong>セキュリティヘッダー(COOP/COEP)</strong>が不足しています。<br>
+                   2. ページを一度リロード（F5）してください。自動適用を試みます。<br>
+                   3. シークレットモードを解除してください。<br>`;
             errorHint += `<br>👉 <button onclick="clearWebGpuModelCache()" style="background:#d32f2f; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; margin-top:5px;">${isEn ? 'Clear WebGPU Cache Now' : '今すぐWebGPUキャッシュをクリアする'}</button>`;
         }
         // HTMLタグ（errorHint）をエスケープせずに結合して表示
@@ -1486,6 +1528,37 @@ Answer:`;
 
 // --- 初期化とイベントリスナー設定 ---
 document.addEventListener('DOMContentLoaded', () => {
+    // --- Cross-Origin Isolation (COOP/COEP) 活性化用 Service Worker ---
+    // これがないと localhost でも Gemma 2 (WASM/OPFS) は動作しません。
+    if ('serviceWorker' in navigator && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+        navigator.serviceWorker.register('./sw.js', { scope: './' }).then(registration => {
+            registration.onupdatefound = () => {
+                const installingWorker = registration.installing;
+                installingWorker.onstatechange = () => {
+                    if (installingWorker.state === "installed" && navigator.serviceWorker.controller) {
+                        console.log("[Storage] Security headers applied via SW. Reloading for activation...");
+                        location.reload();
+                    }
+                };
+            };
+            
+            // 初回登録時かつ隔離されていない場合はリロード
+            if (!window.crossOriginIsolated && !navigator.serviceWorker.controller) {
+                console.log("[Storage] Registering security polyfill...");
+                setTimeout(() => location.reload(), 500);
+            }
+        }).catch(err => {
+            console.error("SW Registration failed:", err);
+            if (err.name === 'SecurityError' || err.message.includes('scheme')) {
+                console.warn("Browser blocked Blob-based Service Worker. Trying to fallback to physical 'sw.js' if available...");
+                // 物理ファイルとしての sw.js がルートにある場合はそちらを試みる
+                navigator.serviceWorker.register('./sw.js').catch(() => {
+                    console.error("Physical sw.js also not found. Cross-Origin Isolation cannot be enabled automatically.");
+                });
+            }
+        });
+    }
+
     // ストレージの永続化をリクエスト
     if (navigator.storage && navigator.storage.persist) {
         const requestPersist = async () => {
@@ -1534,10 +1607,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- イベントリスナーの登録 (失敗しても後続に影響しないよう前方に配置) ---
     const clearWebGpuBtn = document.getElementById('clearWebGpuCacheButton');
     if (clearWebGpuBtn) {
-        clearWebGpuBtn.style.flexShrink = '0'; // 圧縮を防止
-        clearWebGpuBtn.style.whiteSpace = 'nowrap'; 
         clearWebGpuBtn.addEventListener('click', clearWebGpuModelCache);
     }
+
     document.getElementById('sendButton').addEventListener('click', sendToModel);
     document.getElementById('resetDocsButton').addEventListener('click', resetDocuments);
     document.getElementById('saveOcrButton').addEventListener('click', saveOcrTextAsFile);

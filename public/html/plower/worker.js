@@ -178,7 +178,15 @@ self.onmessage = async (e) => {
                 if (isQuotaError || isSessionError || errorMsg.includes('MountedFiles')) {
                     let detail = `[ストレージ異常/容量不足] ディスクが一杯か、ブラウザがモデルデータの書き込みを拒否しました。 (Error: ${errorMsg})`;
                     if (errorMsg.includes('MountedFiles')) {
-                        detail = `[OPFSマウント失敗] ブラウザが仮想ファイルシステムの作成を拒否しました。容量は十分ですが、ブラウザの設定やセキュリティ制約（COOP/COEPヘッダーの欠如など）により、このサイトからのディスク書き込みがブロックされています。`;
+                        const isIso = self.crossOriginIsolated;
+                        const isolationStatus = isIso ? "Isolated" : "NON-Isolated";
+                        detail = `[OPFSマウント失敗] 仮想ディスクの作成に失敗しました (状態: ${isolationStatus})。\n\n`;
+                        if (isIso) {
+                            detail += `隔離モードは有効ですが、OPFSの初期化に失敗しました。ブラウザの「設定 > システム > グラフィックアクセラレーション」がオフになっていないか、またはディスク容量（Quota）が不足していないか確認してください。`;
+                            if (currentDevice === 'wasm') detail += `\n\n⚠️ また、WebGPUが認識されていません。Gemma 2の実行にはWebGPUが強く推奨されます。`;
+                        } else {
+                            detail += `ブラウザの隔離モードが無効です。解決策: ページをリロードして Service Worker が有効になるまで待つか、HTTPS環境（またはlocalhost）で実行してください。`;
+                        }
                     } else if (isQuotaError) {
                         detail = `[ストレージ容量不足] ディスクが一杯です。不要なモデルを削除してください。`;
                     }

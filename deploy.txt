@@ -36,6 +36,9 @@ npm run preview
 ./build_frontend.sh
 
 http://localhost:5501/public/html/plower/index.html
+# 特定のディレクトリをルートとしてサーバーを起動し、ブラウザを自動で開く
+npx vite --port 5173 --strictPort
+
 
 npm run check
 ./start_sagbi.sh

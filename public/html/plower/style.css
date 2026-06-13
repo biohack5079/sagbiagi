@@ -6,13 +6,30 @@ body {
 }
 
 h1 {
-    white-space: nowrap;
+    margin-bottom: 10px;
+}
+
+/* ステータスバー（リンクと容量情報） */
+.status-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 15px;
+    font-size: 0.9em;
+}
+
+.status-link {
+    text-decoration: none;
+    background: #eee;
+    padding: 5px 10px;
+    border-radius: 4px;
+    color: #333;
 }
 
 /* ブックマークレットリンクのスタイル */
 .bookmarklet-link {
-    font-size: 0.4em;
-    margin-left: 10px;
+    font-size: 1em;
     text-decoration: none;
     background: #e3f2fd;
     padding: 5px 10px;
@@ -26,7 +43,7 @@ h1 {
 /* --- RAGコントロールヘッダーの修正スタイル (レイアウト崩れ対策) --- */
 .rag-controls-header {
     display: flex; /* 要素を横並びにする */
-    flex-wrap: nowrap; /* 100%表示でも改行させない */
+    flex-wrap: wrap; /* 幅が足りない場合に改行を許可 */
     align-items: center; /* 垂直方向の中央揃え */
     gap: 8px; 
     margin-top: 20px; /* H1からの間隔を確保 */
@@ -36,7 +53,6 @@ h1 {
     border-radius: 8px;
     min-width: 0;
     overflow-x: auto; /* はみ出し時にスクロール可能に */
-    white-space: nowrap;
 }
 
 /* rag-controls-header内のラベルは、Flexboxで位置を揃えるため、標準のmarginをリセット */

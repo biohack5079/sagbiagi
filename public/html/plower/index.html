@@ -8,11 +8,13 @@
 </head>
 
 <body>
-    <h1><span id="titleText">ローカル情報を掘り起こすAIショベル「プローワー」。</span> <a href="manual.html" id="manualLink"
-            style="font-size: 0.4em; margin-left: 15px; text-decoration: none; background: #eee; padding: 5px 10px; border-radius: 4px; color: #333; vertical-align: middle;">[使い方説明書]</a>
+    <h1><span id="titleText">ローカル情報を掘り起こすAIショベル「プローワー」。</span></h1>
+    <div id="statusBar" class="status-bar">
+        <a href="manual.html" id="manualLink" class="status-link">[使い方説明書]</a>
         <a id="bookmarkletLink" href="#" 
            title="このリンクをブックマークバーにドラッグして登録してください。閲覧中のサイトをAIに送れるようになります。" class="bookmarklet-link">【ブラウザ連携】</a>
-    </h1>
+    </div>
+
     <div class="rag-controls-header">
         <label for="fileInput">RAGソース (フォルダ/ファイル):</label>
         <input type="file" id="fileInput" multiple>

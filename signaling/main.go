@@ -238,8 +238,11 @@ type ChatPayload struct {
 	Lang       string `json:"lang,omitempty"`
 	Done       bool   `json:"done"` // omitemptyを削除し、常に状態を明示する
 	ID         string `json:"id,omitempty"`
-	IsUser     bool   `json:"isUser"`     // フロントエンドのMessage型と同期
-	SenderName string `json:"senderName"` // 送信者名
+	Model      string `json:"model,omitempty"`    // 追加: クライアント指定のモデル
+	Question   string `json:"question,omitempty"` // 追加: ログ表示用の生の質問
+	IsPlower   bool   `json:"isPlower,omitempty"` // 追加: Plowerからの判定
+	IsUser     bool   `json:"isUser"`             // フロントエンドのMessage型と同期
+	SenderName string `json:"senderName"`         // 送信者名
 }
 
 // ── Ollama integration ───────────────────────────────────────
@@ -366,21 +369,24 @@ func queryOllama(payload ChatPayload, onChunk func(string)) error {
 	}
 	systemInstructions := string(content)
 
-	messages := []OllamaChatMessage{
-		{Role: "system", Content: systemInstructions + "\nあなたは過去の会話履歴を尊重し、ユーザーを一貫性のある個人として扱ってください。"},
-	}
-
-	// 1. RAG（知識ベース）からの検索結果を追加
-	ragContext := searchRAG(payload.Text)
-	if ragContext != "" {
-		// システムプロンプトを統合して優先順位を維持
-		messages[0].Content += "\n\nReference from local knowledge:\n" + ragContext
-	}
-
-	// 2. DBから「最近の記憶」を取得して追加
-	recentHistory := getConversationContext(10) // 直近10発言をコンテキストに含める
-	if len(recentHistory) > 0 {
-		messages = append(messages, recentHistory...)
+	var messages []OllamaChatMessage
+	if payload.IsPlower {
+		// Plowerからのリクエストは、既にクライアント側でプロンプトが完結しているため、そのまま送信
+		messages = []OllamaChatMessage{{Role: "user", Content: payload.Text}}
+	} else {
+		messages = []OllamaChatMessage{
+			{Role: "system", Content: systemInstructions + "\nあなたは過去の会話履歴を尊重し、ユーザーを一貫性のある個人として扱ってください。"},
+		}
+		// 1. RAG（知識ベース）からの検索結果を追加
+		ragContext := searchRAG(payload.Text)
+		if ragContext != "" {
+			messages[0].Content += "\n\nReference from local knowledge:\n" + ragContext
+		}
+		// 2. DBから「最近の記憶」を取得して追加
+		recentHistory := getConversationContext(10)
+		if len(recentHistory) > 0 {
+			messages = append(messages, recentHistory...)
+		}
 	}
 
 	userMsg := OllamaChatMessage{
@@ -395,10 +401,17 @@ func queryOllama(payload ChatPayload, onChunk func(string)) error {
 		}
 		userMsg.Images = []string{imgData}
 	}
-	messages = append(messages, userMsg)
+	if !payload.IsPlower {
+		messages = append(messages, userMsg)
+	}
+
+	targetModel := ollamaModel
+	if payload.Model != "" && payload.Model != "sagbi" {
+		targetModel = payload.Model
+	}
 
 	ollamaReq := OllamaChatRequest{
-		Model:    ollamaModel,
+		Model:    targetModel,
 		Messages: messages,
 		Stream:   true,
 	}
@@ -568,7 +581,17 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 				p.SenderName = "You"
 			}
 
-			log.Printf("[Chat] From %s: %s", c.id, p.Text)
+			fullPrompt := p.Text
+			displayMsg := p.Text
+			if p.Question != "" {
+				displayMsg = p.Question
+				// Plowerからの巨大なプロンプトが履歴や他クライアントの画面を埋め尽くさないよう、
+				// 放送・保存用には生の質問（Question）を使用する
+				if p.IsPlower {
+					p.Text = p.Question
+				}
+			}
+			log.Printf("[Chat] Question: %s", displayMsg)
 
 			historyMu.Lock()
 			globalHistory = append(globalHistory, p)
@@ -584,7 +607,10 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			hub.broadcast(broadcastRaw, c) // 送信者を除外してブロードキャスト（自分はローカルで描画済みの為）
 
 			// ── SAGBI DANCE FLOOR: 構造化ストーリー蓄積システム ──
-			go func(payload ChatPayload, clientID string) {
+			go func(payload ChatPayload, clientID string, actualPrompt string, userQuery string) {
+				// AIへの問い合わせには、システムプロンプト等を含むフルプロンプトを復元して使用する
+				payload.Text = actualPrompt
+
 				var story bytes.Buffer
 				sessionID := time.Now().Format("20060102_150405")
 				filename := ""
@@ -596,7 +622,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 					filename = filepath.Join(historyDir, fmt.Sprintf("story_%s_%s.txt", sessionID, clientID))
 
 					story.WriteString(fmt.Sprintf("--- SESSION: %s ---\n", sessionID))
-					story.WriteString(fmt.Sprintf("[USER:%s] %s\n", clientID, payload.Text))
+					story.WriteString(fmt.Sprintf("[USER:%s] %s\n", clientID, userQuery))
 
 					if payload.Image != "" {
 						story.WriteString(fmt.Sprintf("[USER:%s] [IMAGE] attached\n", clientID))
@@ -678,6 +704,8 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 					saveToDB(aiPayload)
 
 					finalBytes, _ := json.Marshal(respMsg)
+					// AIの回答もターミナルに簡潔に表示
+					log.Printf("[Chat] Answer: %s", fullAnswer.String())
 					hub.broadcast(finalBytes, nil)
 				}
 
@@ -689,7 +717,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 						log.Printf("[Error] Save history failed: %v", err)
 					}
 				}
-			}(p, c.id)
+			}(p, c.id, fullPrompt, displayMsg)
 
 		case "signal":
 			// 送信元IDを付与して転送（WebRTC同期に必須）

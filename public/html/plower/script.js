@@ -1067,7 +1067,7 @@ async function saveOcrTextAsFile() {
 
 
 // --- LLMリクエスト共通関数 (翻訳・回答生成で再利用) ---
-async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null, imageData = null) {
+async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null, imageData = null, rawQuestion = "") {
     let result = '';
     let endpoint = '';
     let bodyData = {};
@@ -1229,7 +1229,7 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
         // HTTPS環境で localhost にアクセスしようとする場合、自動で Sagbiブリッジ(WebSocket)に切り替える
         if (isHttpsOrigin && isLocalHost) {
             console.log("[Bridge] Routing request via Sagbi Bridge (WebSocket)...");
-            return await fetchViaSagbiBridge(modelSelect, llmPrompt, imageData, onChunk);
+            return await fetchViaSagbiBridge(modelSelect, llmPrompt, imageData, onChunk, rawQuestion);
         }
 
         // 通常の HTTP 直接接続
@@ -1251,7 +1251,7 @@ async function performLlmRequest(modelSelect, llmPrompt, apiKey, onChunk = null,
 /**
  * WebSocketブリッジ経由で推論リクエストを送信
  */
-async function fetchViaSagbiBridge(model, prompt, image, onChunk) {
+async function fetchViaSagbiBridge(model, prompt, image, onChunk, question) {
     if (!sagbiSocket || sagbiSocket.readyState !== WebSocket.OPEN) {
         throw new Error("Sagbi Bridge is not connected. Make sure your local server is running and Cloudflare Tunnel is active.");
     }
@@ -1262,7 +1262,7 @@ async function fetchViaSagbiBridge(model, prompt, image, onChunk) {
         
         sagbiSocket.send(JSON.stringify({
             type: 'chat_message',
-            payload: { id: requestId, model, text: prompt, image: image?.split(',')[1] }
+            payload: { id: requestId, model, text: prompt, question, isPlower: true, image: image?.split(',')[1] }
         }));
     });
 }
@@ -1425,22 +1425,33 @@ async function sendToModel() {
 
     const systemPrompt = systemPromptCache || "You are a world-class coding assistant.";
 
+    const hasContext = context.trim().length > 0;
+    const isSagbi = modelSelect === 'sagbi';
+
     // プロンプトの生成: LlamaやQwenなど高性能モデル用に詳細な指示を含める
     // 指示が多すぎると軽量モデル(Qwen 0.5B)が混乱するため、構造を簡潔にします
     let prompt;
     if (isGpt2) {
         // GPT-2(Baseモデル)用のシンプルなプロンプト。
-        prompt = `${systemPrompt}${languageSuffix}\n\nContext: ${context}\n\nQuestion: ${userInput}\n\nAnswer:`;
+        prompt = `${systemPrompt}${languageSuffix}${hasContext ? `\n\nContext: ${context}` : ""}\n\nQuestion: ${userInput}\n\nAnswer:`;
     } else {
-        // Qwen 0.5B 用: 余計な指示を削り、検索結果をそのまま出させる「抽出モード」
+        // コンテキストの有無とモデルに応じた指示の切り替え
+        let instruction = "";
+        if (hasContext) {
+            instruction = isEn 
+                ? "Instruction: Please answer based on the provided documents. If the information is not present, use your technical knowledge as a coding assistant."
+                : "指示: 提供された資料に基づいて回答してください。資料に直接的な回答がない場合でも、専門知識を駆使して最善の回答を提示してください。";
+        } else {
+            instruction = isSagbi
+                ? (isEn ? "Instruction: You are 'Sagbi-chan', a friendly AI companion. Engage in a lighthearted, natural conversation." : "指示: あなたは『sagbiちゃん』というフレンドリーなAIです。資料はありませんので、ユーザーと楽しく、たわいのない会話を行ってください。")
+                : (isEn ? "Instruction: Engage in a helpful and friendly conversation." : "指示: ユーザーと親しみやすく、かつ知的な対話を行ってください。");
+        }
+
         prompt = `${systemPrompt}${languageSuffix}
 
-Context:
-${context}
+${hasContext ? `### Context:\n${context}\n\n` : ""}### Question: ${userInput}
 
-Question: ${userInput}
-
-Instruction: Please answer based on the provided documents. If the information is not present, use your technical knowledge as a coding assistant to provide the best possible response.
+${instruction}
 Answer:`;
     }
     
@@ -1474,7 +1485,7 @@ Answer:`;
             }
             responseParagraph.innerHTML = `<strong>${isEn ? 'Answer' : '回答'}:</strong><br>${warningHtml}${esc(chunkText).replace(/\n/g, '<br>')}<div style="height:10px;"></div>${metaHtml}`;
             scrollToBottom();
-        }, imageDataToSend);
+        }, imageDataToSend, userInput);
 
         // 最終結果の表示 (非ストリーミングモデル用)
         const warningHtmlFinal = responseParagraph.querySelector('div[style*="color:#d32f2f"]') ? responseParagraph.querySelector('div[style*="color:#d32f2f"]').outerHTML : "";
